@@ -1,0 +1,12 @@
+# Heizkreis der Fußbodenheizung: Ventilöffnung (0..1 oder 0..100 %)
+# vars: room, idx, entity_id, text
+
+sensor:
+  - platform: homeassistant
+    id: ${room}_circuit_${idx}
+    entity_id: ${entity_id}
+    internal: true
+    filters:
+      - filter_out: nan
+    on_value:
+      - lambda: house::circuit("${room}", ${idx}, "${text}", x);

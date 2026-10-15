@@ -1,0 +1,127 @@
+# Schriften und Icons (Outfit + Material Design Icons), mit Kantenglättung (bpp: 4)
+# Codepoints: https://pictogrammers.com/library/mdi/
+
+font:
+  - file: { type: gfonts, family: Outfit, weight: 600 }
+    id: font_11b
+    size: 11
+    bpp: 4
+    glyphs: &latin " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~°²³ÄÖÜäöüß·…✓Ø–"
+
+  - file: { type: gfonts, family: Outfit, weight: 400 }
+    id: font_11
+    size: 11
+    bpp: 4
+    glyphs: *latin
+
+  - file: { type: gfonts, family: Outfit, weight: 400 }
+    id: font_12
+    size: 12
+    bpp: 4
+    glyphs: *latin
+
+  - file: { type: gfonts, family: Outfit, weight: 500 }
+    id: font_13
+    size: 13
+    bpp: 4
+    glyphs: *latin
+
+  - file: { type: gfonts, family: Outfit, weight: 500 }
+    id: font_14
+    size: 14
+    bpp: 4
+    glyphs: *latin
+
+  - file: { type: gfonts, family: Outfit, weight: 600 }
+    id: font_14b
+    size: 14
+    bpp: 4
+    glyphs: *latin
+
+  - file: { type: gfonts, family: Outfit, weight: 600 }
+    id: font_20b
+    size: 20
+    bpp: 4
+    glyphs: *latin
+
+  - file: { type: gfonts, family: Outfit, weight: 600 }
+    id: font_22
+    size: 22
+    bpp: 4
+    glyphs: *latin
+
+  - file: { type: gfonts, family: Outfit, weight: 500 }
+    id: font_24
+    size: 24
+    bpp: 4
+    glyphs: *latin
+
+  # Uhr im Ruhemodus
+  - file: { type: gfonts, family: Outfit, weight: 300 }
+    id: font_110
+    size: 110
+    bpp: 4
+    glyphs: "0123456789:-"
+
+  # --- Icons ---
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: icons_11
+    size: 11
+    bpp: 4
+    glyphs: ["\U000F0438"]  # radiator
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: icons_16
+    size: 16
+    bpp: 4
+    glyphs: [
+      "\U000F12A3",  # battery-high
+      "\U000F1903",  # home-lightning-bolt
+      "\U000F0F92",  # water-boiler
+      "\U000F0164",  # cloud-off-outline
+    ]
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: icons_20
+    size: 20
+    bpp: 4
+    glyphs: [
+      "\U000F0A72",  # solar-power
+      "\U000F1903",  # home-lightning-bolt
+      "\U000F12A3",  # battery-high
+      "\U000F0D3E",  # transmission-tower
+      "\U000F0335",  # lightbulb
+      "\U000F11DC",  # window-open-variant
+      "\U000F111C",  # window-shutter
+      "\U000F0438",  # radiator
+      "\U000F05F1",  # ev-station
+      "\U000F0F92",  # water-boiler
+      "\U000F0393",  # thermostat
+      "\U000F12CD",  # lightbulb-group-off
+      "\U000F033E",  # lock
+      "\U000F0FC6",  # lock-open-variant
+      "\U000F004D",  # arrow-left
+      "\U000F0143",  # chevron-up
+      "\U000F04DB",  # stop
+      "\U000F0140",  # chevron-down
+      "\U000F0599",  # weather-sunny
+      "\U000F0594",  # weather-night
+      "\U000F0595",  # weather-partly-cloudy
+      "\U000F0590",  # weather-cloudy
+      "\U000F0597",  # weather-rainy
+      "\U000F0596",  # weather-pouring
+      "\U000F0598",  # weather-snowy
+      "\U000F0591",  # weather-fog
+      "\U000F0593",  # weather-lightning
+    ]
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: icons_22
+    size: 22
+    bpp: 4
+    glyphs: [
+      "\U000F0769",  # ceiling-light
+      "\U000F0335",  # lightbulb
+      "\U000F0238",  # fire
+      "\U000F02DC",  # home
+    ]

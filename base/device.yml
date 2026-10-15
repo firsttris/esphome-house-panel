@@ -1,0 +1,7 @@
+# Echtes Gerät: Guition JC1060P470C
+# (Für Screenshots am PC ersetzt preview/sdl.yml diese Datei.)
+# Panel mit "V2" auf dem Aufkleber: hardware.yml durch hardware-v2.yml ersetzen.
+
+packages:
+  hardware: !include hardware.yml
+  network: !include network.yml

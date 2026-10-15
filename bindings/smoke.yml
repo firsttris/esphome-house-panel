@@ -1,0 +1,11 @@
+# Rauchmelder: Raum pulsiert rot, Warnung oben
+# vars: room, entity_id
+
+binary_sensor:
+  - platform: homeassistant
+    id: ${room}_smoke
+    entity_id: ${entity_id}
+    internal: true
+    trigger_on_initial_state: true
+    on_state:
+      - lambda: house::smoke("${room}", x);

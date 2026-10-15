@@ -1,0 +1,63 @@
+# Beispielwerte für die Vorschau (wie im Mockup)
+
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - delay: 300ms
+        - lvgl.widget.hide: loading_overlay
+        - lambda: |-
+            lv_label_set_text(id(clock_label), "14:32");
+            lv_label_set_text(id(sleep_clock), "14:32");
+            lv_label_set_text(id(sleep_date), "Mittwoch, 15. Oktober");
+            lv_label_set_text(id(header_wx), "13° · leicht bewölkt");
+            const struct { const char *r; float t, h; } temps[] = {
+                {"mila", 22.0, 48}, {"schlaf", 21.2, 52}, {"malo", 20.4, 50}, {"bad_og", 22.8, 63}, {"flur_og", 20.1, 51},
+                {"anbau", 19.6, 49}, {"wohnen", 20.8, 58}, {"essen", 20.6, 56}, {"kueche", 21.4, 55}, {"flur_eg", 19.8, 54},
+                {"bad_eg", 22.1, 60}, {"eingang", 18.9, 55}, {"garage", 12.4, 70}, {"wasch", 17.9, 61}, {"heiz", 23.4, 45},
+                {"bad_k", 19.5, 58}, {"buero", 19.2, 52}, {"buero2", 18.6, 53}};
+            for (auto &t : temps) {
+              house::room_temp(t.r, t.t);
+              house::room_humidity(t.r, t.h);
+            }
+            house::light("mila", 0, "", "Links", true, true);
+            house::light("wohnen", 0, "", "Licht", true, true);
+            house::light("essen", 0, "", "Licht", true, true);
+            house::light("kueche", 0, "", "Küche", true, true);
+            house::light("kueche", 1, "", "Kücheninsel", true, false);
+            const struct { const char *r; int i; const char *n; float p; } cv[] = {
+                {"mila", 0, "Dachfenster links", 100}, {"mila", 1, "Dachfenster Mitte", 100}, {"mila", 2, "Dachfenster rechts", 40},
+                {"mila", 3, "Fenster links", 100}, {"mila", 4, "Großes Fenster", 0}, {"mila", 5, "Großes Fenster 2", 0},
+                {"schlaf", 0, "Am Bett", 100}, {"schlaf", 1, "Balkontür", 100}, {"schlaf", 2, "Vici Tisch", 100}, {"schlaf", 3, "Vici hinten", 100},
+                {"malo", 0, "Rollladen", 0}, {"anbau", 0, "Dreierfenster", 100}, {"anbau", 1, "Balkontür", 100},
+                {"wohnen", 0, "Rollladen", 100}, {"essen", 0, "Esszimmer", 100}, {"essen", 1, "Schiebetür", 50}, {"kueche", 0, "Küche", 100}};
+            for (auto &c : cv)
+              house::cover(c.r, c.i, "", c.n, c.p);
+            house::contact("bad_og", 0, "", "Fenster", true);
+            house::contact("bad_eg", 0, "", "Fenster", false);
+            house::contact("bad_k", 0, "", "Balkontür", false);
+            house::contact("wasch", 0, "", "Fenster", true);
+            house::contact("buero2", 0, "", "Balkontür", false);
+            const struct { const char *r; int i; const char *n; float v; } fb[] = {
+                {"mila", 0, "Gr. Fenster links", 0}, {"mila", 1, "Gr. Fenster Mitte", 35}, {"mila", 2, "Gr. Fenster rechts", 20},
+                {"mila", 3, "Kl. Fenster links", 0}, {"mila", 4, "Kl. Fenster rechts", 0}, {"mila", 5, "Mitte", 10},
+                {"malo", 0, "Kreis 1", 25}, {"malo", 1, "Kreis 2", 15}, {"schlaf", 0, "Kreis 1", 0}, {"schlaf", 1, "Kreis 2", 0},
+                {"schlaf", 2, "Kreis 3", 0}, {"bad_og", 0, "Bad", 70}, {"flur_og", 0, "Flur", 0}, {"anbau", 0, "Anbau", 0},
+                {"wohnen", 0, "Kreis 1", 65}, {"wohnen", 1, "Kreis 2", 45}, {"essen", 0, "Kreis 1", 30}, {"essen", 1, "Kreis 2", 0},
+                {"essen", 2, "Kreis 3", 20}, {"kueche", 0, "Esszimmer 1", 30}, {"kueche", 1, "Esszimmer 2", 0}, {"kueche", 2, "Esszimmer 3", 20},
+                {"flur_eg", 0, "Flur", 10}, {"eingang", 0, "Flur EG", 10}, {"bad_eg", 0, "Bad", 85}, {"wasch", 0, "Waschküche", 0},
+                {"bad_k", 0, "Bad", 40}, {"buero", 0, "Kreis 1", 0}, {"buero", 1, "Kreis 2", 0}, {"buero2", 0, "Kreis 1", 55}, {"buero2", 1, "Kreis 2", 40}};
+            for (auto &f : fb)
+              house::circuit(f.r, f.i, f.n, f.v);
+            house::room_target("wohnen", 19.5, "heating");
+            house::set_energy("pv", 6200);
+            house::set_energy("hoy", 1800);
+            house::set_energy("house", 1400);
+            house::set_energy("battery", -2100);
+            house::set_energy("soc", 78);
+            house::set_energy("heater", 900);
+            house::set_energy("car", 3000);
+            house::set_energy("car_today", 8.6);
+            house::set_energy("grid", -600);
+            house::set_lock("", true);
+            house::build_side();

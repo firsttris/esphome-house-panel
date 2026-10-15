@@ -1,0 +1,35 @@
+# Desktop-Vorschau: ersetzt base/device.yml, läuft als SDL-Fenster am PC
+
+host:
+
+api:
+
+logger:
+  level: INFO
+
+display:
+  - platform: sdl
+    id: my_display
+    dimensions:
+      width: 1024
+      height: 600
+    update_interval: never
+    auto_clear_enabled: false
+
+touchscreen:
+  - platform: sdl
+    id: my_touchscreen
+    display: my_display
+
+output:
+  - platform: template
+    id: backlight_output
+    type: float
+    write_action:
+      - lambda: ""
+
+light:
+  - platform: monochromatic
+    id: display_backlight
+    output: backlight_output
+    restore_mode: ALWAYS_ON

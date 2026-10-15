@@ -1,0 +1,16 @@
+services:
+  esphome:
+    container_name: esphome
+    image: ghcr.io/esphome/esphome:stable
+    volumes:
+      # Dieses Repository als ESPHome-Konfigurationsverzeichnis
+      - ./:/config
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
+    # Zugriff auf den USB-Port zum ersten Flashen
+    privileged: true
+    network_mode: host
+    # Optional: Dashboard mit Login schützen (Werte in einer .env-Datei setzen)
+    # environment:
+    #   - USERNAME=${ESPHOME_USERNAME}
+    #   - PASSWORD=${ESPHOME_PASSWORD}

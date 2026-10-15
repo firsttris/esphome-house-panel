@@ -1,0 +1,13 @@
+# Rollladen: Behang des zugehörigen Fensters (Index wie in core/house.h)
+# vars: room, idx, entity_id, text
+
+sensor:
+  - platform: homeassistant
+    id: ${room}_cover_${idx}
+    entity_id: ${entity_id}
+    attribute: current_position
+    internal: true
+    filters:
+      - filter_out: nan
+    on_value:
+      - lambda: house::cover("${room}", ${idx}, "${entity_id}", "${text}", x);

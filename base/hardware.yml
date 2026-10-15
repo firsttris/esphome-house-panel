@@ -1,0 +1,137 @@
+# Hardware: Guition JC1060P470C (ESP32-P4 + ESP32-C6, 7", 1024 × 600, GT911)
+# Modul JC-ESP32P4-M3. Basiert auf agillis/esphome-modular-lvgl-buttons (MIT),
+# ohne Audio. Für die neuere Panel-Revision ("V2" auf dem Aufkleber) stattdessen
+# base/hardware-v2.yml einbinden (siehe README).
+
+esphome:
+  min_version: 2026.7.0
+
+esp32:
+  board: esp32-p4-evboard
+  variant: esp32p4
+  flash_size: 16MB
+  cpu_frequency: 360MHz
+  framework:
+    type: esp-idf
+    advanced:
+      execute_from_psram: true
+      enable_idf_experimental_features: true
+
+esp_ldo:
+  - channel: 3
+    voltage: 2.5V
+
+psram:
+  mode: hex
+  speed: 200MHz
+
+preferences:
+  flash_write_interval: 5min
+
+http_request:  # Needed by esp32_hosted-update and any JSON stuff
+
+# -------------------------------------------
+# Network hardware
+# -------------------------------------------
+
+esp32_hosted:
+  variant: ESP32C6
+  reset_pin: GPIO54
+  cmd_pin: GPIO19
+  clk_pin: GPIO18
+  d0_pin: GPIO14
+  d1_pin: GPIO15
+  d2_pin: GPIO16
+  d3_pin: GPIO17
+  active_high: true
+
+# Firmware update for esp32_hosted ESP32-C6
+update:
+  - platform: esp32_hosted
+    name: ESP-Hosted Firmware
+    icon: mdi:chip
+    type: http
+    source: https://esphome.github.io/esp-hosted-firmware/manifest/esp32c6.json
+    update_interval: 6h
+
+# ethernet:
+#   type: IP101
+#   mdc_pin: GPIO31
+#   mdio_pin: GPIO52
+#   clk:
+#     pin: GPIO50
+#     mode: CLK_EXT_IN
+#   phy_addr: 1
+#   power_pin: GPIO51
+
+# -------------------------------------------
+# Internal outputs
+# -------------------------------------------
+output:
+  - id: gpio_backlight_pwm
+    platform: ledc
+    pin: GPIO23
+      #    frequency: 100Hz
+      #    inverted: false
+    #min_power: 0.1 # To prevent the backlight from being too dim
+    #    max_power: 0.8 # To prevent overheating due to excessive lighting
+
+light:
+  - platform: monochromatic
+    output: gpio_backlight_pwm
+    icon: mdi:lightbulb-on
+    id: display_backlight
+    restore_mode: ALWAYS_ON
+    default_transition_length: 0s
+    gamma_correct: 1.0
+
+# -------------------------------------------
+# i2c bus
+# -------------------------------------------
+i2c:
+  - id: bus_a
+    sda: GPIO7
+    scl: GPIO8
+    frequency: 400kHz
+
+# -------------------------------------------
+# Touchscreen
+# -------------------------------------------
+touchscreen:
+  - platform: gt911
+    id: my_touchscreen
+    reset_pin: GPIO22
+    interrupt_pin: GPIO21
+    address: 0x5D
+    transform:
+      swap_xy: false
+      mirror_x: false
+      mirror_y: false
+#   on_touch:
+#     - logger.log:
+#           format: Touch at (%d, %d)
+#           args: [touch.x, touch.y]
+#     - lambda: |-
+#           ESP_LOGI("cal", "x=%d, y=%d, x_raw=%d, y_raw=%0d",
+#               touch.x,
+#               touch.y,
+#               touch.x_raw,
+#               touch.y_raw
+#               );
+
+# -------------------------------------------
+# Display
+# -------------------------------------------
+display:
+  - platform: mipi_dsi
+    model: JC1060P470
+    id: my_display
+    update_interval: never
+    reset_pin:
+      number: GPIO05
+    hsync_pulse_width: 20
+
+
+# Special LVGL settings required for this display
+lvgl:
+  rotation: 0

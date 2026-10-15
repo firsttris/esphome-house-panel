@@ -1,0 +1,11 @@
+# Fensterkontakt: Flügel schwingt auf, blauer Rahmen, pulsierender Punkt
+# vars: room, idx, entity_id, text
+
+binary_sensor:
+  - platform: homeassistant
+    id: ${room}_contact_${idx}
+    entity_id: ${entity_id}
+    internal: true
+    trigger_on_initial_state: true
+    on_state:
+      - lambda: house::contact("${room}", ${idx}, "${entity_id}", "${text}", x);

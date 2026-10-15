@@ -1,0 +1,89 @@
+name: Build firmware
+
+# Changes to documentation alone don't build.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+
+# A new push to a pull request cancels its outdated run; runs on main finish
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    # Draft pull requests do not build; "Ready for review" starts the run
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        id: python
+        with:
+          python-version: "3.12"
+
+      # ESPHome is not pinned, so the pip cache rolls over weekly to pick up
+      # new releases; it saves downloading and building the wheels
+      - name: Get week
+        id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ steps.week.outputs.week }}
+          restore-keys: pip-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-
+
+      - name: Install ESPHome
+        id: esphome
+        run: |
+          pip install esphome
+          echo "version=$(esphome version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Create dummy secrets
+        run: |
+          cat > secrets.yaml <<EOS
+          wifi_ssid: "ci"
+          wifi_password: "ci-password"
+          api_key: "$(openssl rand -base64 32)"
+          fallback_password: "ci-password"
+          EOS
+
+      - name: Validate config
+        run: |
+          esphome config house.yml > /dev/null
+
+      # ESP-IDF, toolchains and the IDF Python env are downloaded to
+      # ~/.cache/esphome. That env links to the runner's Python, so the key
+      # includes the Python and ESPHome version.
+      - name: Cache ESPHome toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/esphome
+          key: esphome-idf-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ steps.esphome.outputs.version }}
+
+      # Build directory (incl. storage JSON, without which ESPHome cleans the
+      # build): ninja then only recompiles what changed. secrets.yaml
+      # is neither part of the key nor cached.
+      - name: Cache build directory
+        uses: actions/cache@v4
+        with:
+          path: .esphome
+          key: esphome-build-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ steps.esphome.outputs.version }}-${{ hashFiles('**/*.yml', '**/*.h', 'fonts/**', '!.github/**', '!.esphome/**') }}
+          restore-keys: esphome-build-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ steps.esphome.outputs.version }}-
+
+      - name: Compile
+        run: |
+          esphome compile house.yml

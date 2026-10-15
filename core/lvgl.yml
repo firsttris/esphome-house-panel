@@ -1,0 +1,196 @@
+# Bildschirm: links das Haus (Canvas + Objekte aus house.h), rechts die Seitenleiste,
+# oben die Kopfzeile. Den Inhalt baut core/house.h auf.
+
+lvgl:
+  log_level: NONE
+  color_depth: 16
+  buffer_size: 25%
+
+  theme:
+    obj:
+      border_width: 0
+
+  top_layer:
+    widgets:
+      # --- Kopfzeile ---
+      - obj:
+          x: 0
+          y: 0
+          width: 1024
+          height: 56
+          bg_opa: TRANSP
+          border_width: 0
+          pad_all: 0
+          clickable: false
+          scrollable: false
+          widgets:
+            - obj:
+                x: 20
+                y: 9
+                width: 38
+                height: 38
+                radius: 13
+                bg_color: 0x2A3350
+                bg_grad_color: 0x1C2336
+                bg_grad_dir: VER
+                border_width: 0
+                pad_all: 0
+                clickable: false
+                widgets:
+                  - label: { align: CENTER, text: "\U000F02DC", text_font: icons_22, text_color: 0xF6C9A0 }
+            - label: { x: 70, y: 9, text: "${house_name}", text_font: font_22, text_color: 0xEEF2F8 }
+            - label: { id: header_sub, x: 70, y: 35, text: "Alle Etagen", text_font: font_12, text_color: 0x8892A8 }
+            - label:
+                id: offline_indicator
+                align: TOP_RIGHT
+                x: -290
+                y: 20
+                text: "\U000F0164"
+                text_font: icons_16
+                text_color: 0xFF5252
+                hidden: true
+            - obj:
+                align: TOP_RIGHT
+                x: -110
+                y: 16
+                width: SIZE_CONTENT
+                height: 24
+                bg_opa: TRANSP
+                border_width: 0
+                pad_all: 0
+                clickable: false
+                layout:
+                  type: flex
+                  flex_flow: ROW
+                  flex_align_cross: CENTER
+                  pad_column: 6
+                widgets:
+                  - label: { id: header_wx_icon, text: "\U000F0595", text_font: icons_20, text_color: 0xFFB547 }
+                  - label: { id: header_wx, text: "--°", text_font: font_14, text_color: 0x8892A8 }
+            - label: { id: clock_label, align: TOP_RIGHT, x: -24, y: 12, text: "--:--", text_font: font_24, text_color: 0xEEF2F8 }
+
+      # --- Erste Berührung nach dem Abdunkeln: nur aufwecken ---
+      - obj:
+          id: wake_catcher
+          x: 0
+          y: 0
+          width: 1024
+          height: 600
+          bg_opa: TRANSP
+          border_width: 0
+          hidden: true
+          on_press:
+            - script.execute: wake_up
+
+      # --- Ruhemodus ---
+      - obj:
+          id: sleep_overlay
+          x: 0
+          y: 0
+          width: 1024
+          height: 600
+          radius: 0
+          border_width: 0
+          bg_color: 0x0D1322
+          bg_grad_color: 0x03050A
+          bg_grad_dir: VER
+          hidden: true
+          scrollable: false
+          on_press:
+            - script.execute: wake_up
+          widgets:
+            - label: { id: sleep_clock, align: CENTER, y: -40, text: "--:--", text_font: font_110, text_color: 0xDCE3F0 }
+            - label: { id: sleep_date, align: CENTER, y: 34, text: "", text_font: font_20b, text_color: 0x8892A8 }
+            - label: { align: BOTTOM_MID, y: -24, text: "Tippen zum Aufwecken", text_font: font_12, text_color: 0x5C667C }
+
+      # --- Ladebildschirm ---
+      - obj:
+          id: loading_overlay
+          x: 0
+          y: 0
+          width: 1024
+          height: 600
+          radius: 0
+          border_width: 0
+          bg_color: 0x0A0E16
+          scrollable: false
+          widgets:
+            - label: { align: CENTER, y: -40, text: "${house_name}", text_font: font_22, text_color: 0xEEF2F8 }
+            - label: { id: loading_status, align: CENTER, y: -8, text: "Verbinde mit Home Assistant …", text_font: font_13, text_color: 0x8892A8 }
+            - spinner:
+                align: CENTER
+                y: 50
+                width: 40
+                height: 40
+                spin_time: 1.2s
+                arc_length: 90deg
+                arc_width: 4
+                arc_color: 0x222B3E
+                indicator:
+                  arc_color: 0xFFB547
+                  arc_width: 4
+
+  pages:
+    - id: page_house
+      bg_color: 0x0A0E16
+      pad_all: 0
+      scrollable: false
+      widgets:
+        # Hausbild (zeichnet house.h)
+        - canvas:
+            id: scene_canvas
+            x: 0
+            y: 0
+            width: 650
+            height: 600
+        # Aktiviert LVGL-Linien für den Energiefluss (house.h legt die echten an)
+        - line:
+            id: line_enable
+            points: [[0, 0], [1, 1]]
+            hidden: true
+        # Lebende Teile darüber (Fenster, Heizung, Fluss, Beschriftung)
+        - obj:
+            id: scene
+            x: 0
+            y: 0
+            width: 650
+            height: 600
+            bg_opa: TRANSP
+            border_width: 0
+            radius: 0
+            pad_all: 0
+            scrollable: false
+            clickable: false
+        # Seitenleiste: Übersicht oder angetippter Raum
+        - obj:
+            id: side
+            x: 662
+            y: 62
+            width: 350
+            height: 530
+            bg_opa: TRANSP
+            border_width: 0
+            radius: 0
+            pad_all: 0
+            scrollbar_mode: "OFF"
+            # Flex-Layout setzt house.h (die Inhalte entstehen erst dort)
+
+  # Abdunkeln nach 1 min, Ruhemodus nach 3 min ohne Berührung
+  on_idle:
+    - timeout: ${dim_after | default("60s")}
+      then:
+        - lvgl.widget.show: wake_catcher
+        - light.turn_on:
+            id: display_backlight
+            brightness: 40%
+    - timeout: ${sleep_after | default("180s")}
+      then:
+        - script.execute: update_clock
+        - lvgl.widget.show: sleep_overlay
+        - lambda: lv_obj_fade_in(id(sleep_overlay), 700, 0);
+        - light.turn_on:
+            id: display_backlight
+            brightness: !lambda |-
+              auto t = id(ha_time).now();
+              bool night = t.is_valid() && (t.hour >= 21 || t.hour < 7);
+              return night ? 0.06f : 0.25f;

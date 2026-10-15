@@ -1,0 +1,10 @@
+# Alles, was das Haus-Panel braucht. Wird von house.yml eingebunden.
+
+esphome:
+  includes:
+    - core/house.h
+
+packages:
+  fonts: !include fonts.yml
+  lvgl: !include lvgl.yml
+  logic: !include logic.yml

@@ -1,0 +1,11 @@
+# Licht: Fenster leuchten warm, Kachel in der Raumansicht
+# vars: room, idx (0, 1, …), entity_id, text, optional swing (Deckenlampe pendelt, Standard true)
+
+binary_sensor:
+  - platform: homeassistant
+    id: ${room}_light_${idx}
+    entity_id: ${entity_id}
+    internal: true
+    trigger_on_initial_state: true
+    on_state:
+      - lambda: house::light("${room}", ${idx}, "${entity_id}", "${text}", x, ${'true' if (swing | default(true)) else 'false'});

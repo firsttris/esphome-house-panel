@@ -1,0 +1,34 @@
+# Raumklima vom Wandthermostat: Temperatur (färbt den Raum), Luftfeuchte, Ziel, heizt/ruht
+# vars: room (Raum-ID aus core/house.h), entity_id (climate.*)
+
+sensor:
+  - platform: homeassistant
+    id: ${room}_temp
+    entity_id: ${entity_id}
+    attribute: current_temperature
+    internal: true
+    on_value:
+      - lambda: house::room_temp("${room}", x);
+  - platform: homeassistant
+    id: ${room}_hum
+    entity_id: ${entity_id}
+    attribute: current_humidity
+    internal: true
+    on_value:
+      - lambda: house::room_humidity("${room}", x);
+  - platform: homeassistant
+    id: ${room}_target
+    entity_id: ${entity_id}
+    attribute: temperature
+    internal: true
+    on_value:
+      - lambda: house::room_target("${room}", x, "");
+
+text_sensor:
+  - platform: homeassistant
+    id: ${room}_action
+    entity_id: ${entity_id}
+    attribute: hvac_action
+    internal: true
+    on_value:
+      - lambda: house::room_target("${room}", NAN, x);

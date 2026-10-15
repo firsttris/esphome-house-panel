@@ -1,0 +1,185 @@
+# Aufbau, Takt, Aktionen, Uhr, Verbindung, Wetter, Tag/Nacht, Energie
+
+esphome:
+  on_boot:
+    - priority: -10
+      then:
+        - lambda: |-
+            auto &u = house::ui;
+            u.canvas = id(scene_canvas);
+            u.scene = id(scene);
+            u.side = id(side);
+            u.subtitle = id(header_sub);
+            u.f11b = id(font_11b)->get_lv_font();
+            u.f11 = id(font_11)->get_lv_font();
+            u.f12 = id(font_12)->get_lv_font();
+            u.f13 = id(font_13)->get_lv_font();
+            u.f14 = id(font_14)->get_lv_font();
+            u.f14b = id(font_14b)->get_lv_font();
+            u.f20b = id(font_20b)->get_lv_font();
+            u.i11 = id(icons_11)->get_lv_font();
+            u.i16 = id(icons_16)->get_lv_font();
+            u.i20 = id(icons_20)->get_lv_font();
+            u.i22 = id(icons_22)->get_lv_font();
+            house::call_action = [](const std::string &action, const std::string &entity) {
+              id(ha_action)->execute(action, entity);
+            };
+            house::build();
+
+globals:
+  - id: ha_connected
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+interval:
+  # Energiefluss, Funken
+  - interval: 40ms
+    then:
+      - lambda: house::tick();
+  # Hausbild und Seitenleiste neu aufbauen, wenn sich etwas geändert hat
+  - interval: 1s
+    then:
+      - lambda: house::slow_tick();
+
+script:
+  # Aktion in Home Assistant, z. B. homeassistant.toggle / cover.open_cover / lock.lock
+  - id: ha_action
+    mode: queued
+    parameters:
+      action: string
+      entity: string
+    then:
+      - homeassistant.action:
+          action: !lambda return action;
+          data:
+            entity_id: !lambda return entity;
+
+  # Kopfzeile: Wettersymbol, Außentemperatur und Zustand auf Deutsch
+  - id: update_weather
+    then:
+      - lambda: |-
+          struct W { const char *key, *text, *icon; };
+          static const W map[] = {
+              {"sunny", "sonnig", "\U000F0599"}, {"clear-night", "klar", "\U000F0594"},
+              {"partlycloudy", "leicht bewölkt", "\U000F0595"}, {"cloudy", "bewölkt", "\U000F0590"},
+              {"rainy", "Regen", "\U000F0597"}, {"pouring", "Starkregen", "\U000F0596"},
+              {"snowy", "Schnee", "\U000F0598"}, {"snowy-rainy", "Schneeregen", "\U000F0598"},
+              {"fog", "Nebel", "\U000F0591"}, {"lightning", "Gewitter", "\U000F0593"},
+              {"lightning-rainy", "Gewitter", "\U000F0593"}, {"hail", "Hagel", "\U000F0598"},
+              {"windy", "windig", "\U000F0590"}, {"exceptional", "Unwetter", "\U000F0593"},
+          };
+          std::string s = id(weather_state).state;
+          const W *w = nullptr;
+          for (auto &m : map)
+            if (s == m.key)
+              w = &m;
+          float t = id(weather_temp).state;
+          char buf[48];
+          if (std::isnan(t))
+            snprintf(buf, sizeof(buf), "%s", w ? w->text : "");
+          else
+            snprintf(buf, sizeof(buf), "%d° · %s", (int) lroundf(t), w ? w->text : "");
+          lv_label_set_text(id(header_wx), buf);
+          if (w)
+            lv_label_set_text(id(header_wx_icon), w->icon);
+
+  - id: on_ha_connected
+    then:
+      - globals.set:
+          id: ha_connected
+          value: "true"
+      - lvgl.widget.hide: offline_indicator
+      - lvgl.label.update:
+          id: loading_status
+          text: "Verbunden – lade Zustände …"
+      - delay: 2s
+      - lvgl.widget.hide: loading_overlay
+
+  - id: on_ha_disconnected
+    then:
+      - globals.set:
+          id: ha_connected
+          value: "false"
+      - lvgl.widget.show: offline_indicator
+
+  - id: wake_up
+    then:
+      - lvgl.widget.hide: [sleep_overlay, wake_catcher]
+      - light.turn_on:
+          id: display_backlight
+          brightness: 100%
+
+  - id: update_clock
+    then:
+      - lambda: |-
+          // In der PC-Vorschau bleibt die Uhrzeit aus den Beispielwerten stehen
+          if (${'true' if preview | default(false) else 'false'})
+            return;
+          auto t = id(ha_time).now();
+          if (!t.is_valid())
+            return;
+          static const char *const WD[7] = {"Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"};
+          static const char *const MO[12] = {"Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"};
+          char buf[40];
+          snprintf(buf, sizeof(buf), "%02d:%02d", t.hour, t.minute);
+          lv_label_set_text(id(clock_label), buf);
+          lv_label_set_text(id(sleep_clock), buf);
+          snprintf(buf, sizeof(buf), "%s, %d. %s", WD[(t.day_of_week + 6) % 7], t.day_of_month, MO[(t.month + 11) % 12]);
+          lv_label_set_text(id(sleep_date), buf);
+
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time_sync:
+      then:
+        - script.execute: update_clock
+    on_time:
+      - seconds: 0
+        then:
+          - script.execute: update_clock
+
+sensor:
+  # --- Energie (W, Batterie: + Entladen / - Laden, Netz: + Bezug / - Einspeisung) ---
+  - { platform: homeassistant, id: en_pv, entity_id: "${pv_power}", internal: true, on_value: [lambda: 'house::set_energy("pv", x);'] }
+  - { platform: homeassistant, id: en_hoy, entity_id: "${hoymiles_power}", internal: true, on_value: [lambda: 'house::set_energy("hoy", x);'] }
+  - { platform: homeassistant, id: en_house, entity_id: "${house_power}", internal: true, on_value: [lambda: 'house::set_energy("house", x);'] }
+  - { platform: homeassistant, id: en_battery, entity_id: "${battery_power}", internal: true, on_value: [lambda: 'house::set_energy("battery", x);'] }
+  - { platform: homeassistant, id: en_soc, entity_id: "${battery_soc}", internal: true, on_value: [lambda: 'house::set_energy("soc", x);'] }
+  - { platform: homeassistant, id: en_grid, entity_id: "${grid_power}", internal: true, on_value: [lambda: 'house::set_energy("grid", x);'] }
+  - { platform: homeassistant, id: en_heater, entity_id: "${heater_power}", internal: true, on_value: [lambda: 'house::set_energy("heater", x);'] }
+  - { platform: homeassistant, id: en_car, entity_id: "${wallbox_power}", internal: true, on_value: [lambda: 'house::set_energy("car", x);'] }
+  - { platform: homeassistant, id: en_car_today, entity_id: "${wallbox_energy_today}", internal: true, on_value: [lambda: 'house::set_energy("car_today", x);'] }
+
+  # --- Wetter ---
+  - platform: homeassistant
+    id: weather_temp
+    entity_id: ${weather_entity}
+    attribute: temperature
+    internal: true
+    on_value:
+      - script.execute: update_weather
+
+text_sensor:
+  - platform: homeassistant
+    id: weather_state
+    entity_id: ${weather_entity}
+    internal: true
+    on_value:
+      - script.execute: update_weather
+
+  # Tag/Nacht nach dem Sonnenstand
+  - platform: homeassistant
+    id: sun_state
+    entity_id: sun.sun
+    internal: true
+    on_value:
+      - lambda: house::set_night(x == "below_horizon");
+
+  # Haustür
+  - platform: homeassistant
+    id: front_lock
+    entity_id: ${lock_entity}
+    internal: true
+    on_value:
+      - lambda: house::set_lock("${lock_entity}", x == "locked");

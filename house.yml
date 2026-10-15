@@ -1,0 +1,171 @@
+# Lebendes Haus: 7"-Panel (Guition JC1060P470C, 1024 × 600)
+#
+# Oben die Einstellungen, darunter alle Geräte nach Raum. Raum-IDs und
+# Fensterzuordnung (Index der Rollläden und Kontakte) stehen in core/house.h.
+
+substitutions:
+  device_name: panel-haus
+  friendly_name: Panel Haus
+  house_name: Zuhause
+  weather_entity: weather.forecast_home
+  lock_entity: lock.turschlossantrieb_haustur_eg
+  # Energie (W)
+  pv_power: sensor.deye_wechselrichter_deye_dc_gesamtleistung
+  hoymiles_power: sensor.hmt_2250_6t_power
+  house_power: sensor.hausverbrauch
+  battery_power: sensor.deye_wechselrichter_deye_batterie_leistung   # + Entladen / - Laden
+  battery_soc: sensor.deye_wechselrichter_deye_batterie_soc
+  grid_power: sensor.deye_wechselrichter_deye_netz_gesamtleistung    # + Bezug / - Einspeisung
+  heater_power: sensor.ac_elwa_2_power_elwa_2
+  # go-e-Wallbox (noch nicht in HA: bleibt leer, bis die Entitäten existieren)
+  wallbox_power: sensor.go_echarger_power
+  wallbox_energy_today: sensor.go_echarger_energy_today
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+
+packages:
+  device: !include base/device.yml
+  core: !include core/index.yml
+
+
+  # --- Dachgeschoss: Mila ---
+  mila_climate: !include { file: bindings/room.yml, vars: { room: mila, entity_id: climate.wandthermostat_dg } }
+  mila_light_0: !include { file: bindings/light.yml, vars: { room: mila, idx: 0, entity_id: switch.lichtschaltaktor_dg_licht_dg_links, text: Links } }
+  mila_light_1: !include { file: bindings/light.yml, vars: { room: mila, idx: 1, entity_id: switch.lichtschaltaktor_dg_licht_dg_mitte, text: Mitte } }
+  mila_light_2: !include { file: bindings/light.yml, vars: { room: mila, idx: 2, entity_id: switch.lichtschaltaktor_dg_licht_dg_rechts, text: Rechts } }
+  mila_light_3: !include { file: bindings/light.yml, vars: { room: mila, idx: 3, entity_id: switch.lichtschaltaktor_dg_licht_dg_treppe, text: Treppe, swing: false } }
+  mila_cover_0: !include { file: bindings/cover.yml, vars: { room: mila, idx: 0, entity_id: cover.rolladenaktor_dg_1_rolladen_dg_dach_links, text: "Dachfenster links" } }
+  mila_cover_1: !include { file: bindings/cover.yml, vars: { room: mila, idx: 1, entity_id: cover.rolladenaktor_dg_1_rolladen_dg_dach_mitte, text: "Dachfenster Mitte" } }
+  mila_cover_2: !include { file: bindings/cover.yml, vars: { room: mila, idx: 2, entity_id: cover.rolladenaktor_dg_1_rolladen_dg_dach_rechts, text: "Dachfenster rechts" } }
+  mila_cover_3: !include { file: bindings/cover.yml, vars: { room: mila, idx: 3, entity_id: cover.rolladenaktor_dg_1_rolladen_dg_fenster_links, text: "Fenster links" } }
+  mila_cover_4: !include { file: bindings/cover.yml, vars: { room: mila, idx: 4, entity_id: cover.rolladenaktor_dg_2_rolladen_dg_grosses_fenster_rechts, text: "Großes Fenster" } }
+  mila_cover_5: !include { file: bindings/cover.yml, vars: { room: mila, idx: 5, entity_id: cover.rolladenaktor_dg_2_rolladen_dg_grosses_fenster_rechts_2, text: "Großes Fenster 2" } }
+  mila_circuit_0: !include { file: bindings/circuit.yml, vars: { room: mila, idx: 0, entity_id: number.fussbodenheizung_dach_heizkreis_dg_grosses_fenster_links_level, text: "Gr. Fenster links" } }
+  mila_circuit_1: !include { file: bindings/circuit.yml, vars: { room: mila, idx: 1, entity_id: number.fussbodenheizung_dach_heizkreis_dg_grosses_fenster_mitte_level, text: "Gr. Fenster Mitte" } }
+  mila_circuit_2: !include { file: bindings/circuit.yml, vars: { room: mila, idx: 2, entity_id: number.fussbodenheizung_dach_heizkreis_dg_grosses_fenster_rechts_level, text: "Gr. Fenster rechts" } }
+  mila_circuit_3: !include { file: bindings/circuit.yml, vars: { room: mila, idx: 3, entity_id: number.fussbodenheizung_dach_heizkreis_dg_kleines_fenster_links_level, text: "Kl. Fenster links" } }
+  mila_circuit_4: !include { file: bindings/circuit.yml, vars: { room: mila, idx: 4, entity_id: number.fussbodenheizung_dach_heizkreis_dg_kleines_fenster_rechts_level, text: "Kl. Fenster rechts" } }
+  mila_circuit_5: !include { file: bindings/circuit.yml, vars: { room: mila, idx: 5, entity_id: number.fussbodenheizung_dach_heizkreis_dg_mitte_level, text: Mitte } }
+  mila_smoke: !include { file: bindings/smoke.yml, vars: { room: mila, entity_id: binary_sensor.rauchmelder_dg_kinderzimmer_smoke } }
+
+  # --- OG: Schlafzimmer ---
+  schlaf_climate: !include { file: bindings/room.yml, vars: { room: schlaf, entity_id: climate.wandthermostat_og_eltern } }
+  schlaf_light_0: !include { file: bindings/light.yml, vars: { room: schlaf, idx: 0, entity_id: switch.lichtschaltaktor_og_licht_og_eltern, text: Schlafen } }
+  schlaf_light_1: !include { file: bindings/light.yml, vars: { room: schlaf, idx: 1, entity_id: switch.lichtschaltaktor_og_licht_og_vici, text: Vici } }
+  schlaf_cover_0: !include { file: bindings/cover.yml, vars: { room: schlaf, idx: 0, entity_id: cover.rolladenaktor_og_1_rolladen_og_eltern_bett, text: "Am Bett" } }
+  schlaf_cover_1: !include { file: bindings/cover.yml, vars: { room: schlaf, idx: 1, entity_id: cover.rolladenaktor_og_2_rolladen_og_eltern_balkon_2, text: "Balkontür" } }
+  schlaf_cover_2: !include { file: bindings/cover.yml, vars: { room: schlaf, idx: 2, entity_id: cover.rolladenaktor_og_2_rolladen_og_vici, text: "Vici Tisch" } }
+  schlaf_cover_3: !include { file: bindings/cover.yml, vars: { room: schlaf, idx: 3, entity_id: cover.rolladenaktor_og_2_rolladen_og_vici_tisch, text: "Vici hinten" } }
+  schlaf_circuit_0: !include { file: bindings/circuit.yml, vars: { room: schlaf, idx: 0, entity_id: number.fussbodenheizung_og_heizkreis_og_schlafzimmer_1_level, text: "Kreis 1" } }
+  schlaf_circuit_1: !include { file: bindings/circuit.yml, vars: { room: schlaf, idx: 1, entity_id: number.fussbodenheizung_og_heizkreis_og_schlafzimmer_2_level, text: "Kreis 2" } }
+  schlaf_circuit_2: !include { file: bindings/circuit.yml, vars: { room: schlaf, idx: 2, entity_id: number.fussbodenheizung_og_heizkreis_og_schlafzimmer_3_level, text: "Kreis 3" } }
+  schlaf_smoke: !include { file: bindings/smoke.yml, vars: { room: schlaf, entity_id: binary_sensor.rauchmelder_og_schlafzimmer_bett_smoke } }
+
+  # --- OG: Malo ---
+  malo_climate: !include { file: bindings/room.yml, vars: { room: malo, entity_id: climate.wandthermostat_og_mila } }
+  malo_light_0: !include { file: bindings/light.yml, vars: { room: malo, idx: 0, entity_id: switch.lichtschaltaktor_og_licht_og_mila, text: Licht } }
+  malo_cover_0: !include { file: bindings/cover.yml, vars: { room: malo, idx: 0, entity_id: cover.rolladenaktor_og_2_rolladen_og_mila, text: Rollladen } }
+  malo_circuit_0: !include { file: bindings/circuit.yml, vars: { room: malo, idx: 0, entity_id: number.fussbodenheizung_og_heizkreis_og_mila_1_level, text: "Kreis 1" } }
+  malo_circuit_1: !include { file: bindings/circuit.yml, vars: { room: malo, idx: 1, entity_id: number.fussbodenheizung_og_heizkreis_og_mila_2_level, text: "Kreis 2" } }
+  malo_smoke: !include { file: bindings/smoke.yml, vars: { room: malo, entity_id: binary_sensor.rauchmelder_og_kinderzimmer_smoke } }
+
+  # --- OG: Bad ---
+  bad_og_climate: !include { file: bindings/room.yml, vars: { room: bad_og, entity_id: climate.wandthermostat_og_bad } }
+  bad_og_light_0: !include { file: bindings/light.yml, vars: { room: bad_og, idx: 0, entity_id: switch.lichtschaltaktor_og_licht_og_bad, text: Licht } }
+  bad_og_contact_0: !include { file: bindings/contact.yml, vars: { room: bad_og, idx: 0, entity_id: binary_sensor.fensterkontakt_bad_og, text: Fenster } }
+  bad_og_circuit_0: !include { file: bindings/circuit.yml, vars: { room: bad_og, idx: 0, entity_id: number.fussbodenheizung_og_heizkreis_og_bad_level, text: Bad } }
+
+  # --- OG: Flur ---
+  flur_og_climate: !include { file: bindings/room.yml, vars: { room: flur_og, entity_id: climate.wandthermostat_og_flur_anbau_wandthermostat_og_flur_u_anbau } }
+  flur_og_light_0: !include { file: bindings/light.yml, vars: { room: flur_og, idx: 0, entity_id: switch.lichtschaltaktor_og_licht_og_flur, text: Licht } }
+  flur_og_light_1: !include { file: bindings/light.yml, vars: { room: flur_og, idx: 1, entity_id: switch.lichtschaltaktor_og_licht_og_treppe_dach, text: "Treppe DG", swing: false } }
+  flur_og_circuit_0: !include { file: bindings/circuit.yml, vars: { room: flur_og, idx: 0, entity_id: number.fussbodenheizung_og_heizkreis_og_flur_level, text: Flur } }
+
+  # --- OG: Anbau ---
+  anbau_climate: !include { file: bindings/room.yml, vars: { room: anbau, entity_id: climate.wandthermostat_og_flur_anbau_wandthermostat_og_flur_u_anbau } }
+  anbau_light_0: !include { file: bindings/light.yml, vars: { room: anbau, idx: 0, entity_id: switch.lichtschaltaktor_og_licht_og_anbau, text: Licht } }
+  anbau_cover_0: !include { file: bindings/cover.yml, vars: { room: anbau, idx: 0, entity_id: cover.rolladenaktor_og_1_rolladen_og_anbau_3er, text: Dreierfenster } }
+  anbau_cover_1: !include { file: bindings/cover.yml, vars: { room: anbau, idx: 1, entity_id: cover.rolladenaktor_og_1_rolladen_og_anbau_balkon, text: "Balkontür" } }
+  anbau_circuit_0: !include { file: bindings/circuit.yml, vars: { room: anbau, idx: 0, entity_id: number.fussbodenheizung_og_heizkreis_og_anbau_level, text: Anbau } }
+  anbau_smoke: !include { file: bindings/smoke.yml, vars: { room: anbau, entity_id: binary_sensor.rauchmelder_og_anbau_smoke } }
+
+  # --- EG: Wohnzimmer ---
+  wohnen_climate: !include { file: bindings/room.yml, vars: { room: wohnen, entity_id: climate.wandthermostat_eg_wohnraum } }
+  wohnen_light_0: !include { file: bindings/light.yml, vars: { room: wohnen, idx: 0, entity_id: switch.lichtschaltaktor_eg_licht_eg_wohnzimmer, text: Licht } }
+  wohnen_cover_0: !include { file: bindings/cover.yml, vars: { room: wohnen, idx: 0, entity_id: cover.rolladenaktor_eg_rolladen_eg_wohnzimmer, text: Rollladen } }
+  wohnen_circuit_0: !include { file: bindings/circuit.yml, vars: { room: wohnen, idx: 0, entity_id: number.fussbodenheizung_eg_heizkreis_eg_wohnzimmer_1_level, text: "Kreis 1" } }
+  wohnen_circuit_1: !include { file: bindings/circuit.yml, vars: { room: wohnen, idx: 1, entity_id: number.fussbodenheizung_eg_heizkreis_eg_wohnzimmer_2_level, text: "Kreis 2" } }
+
+  # --- EG: Esszimmer ---
+  essen_climate: !include { file: bindings/room.yml, vars: { room: essen, entity_id: climate.wandthermostat_eg_wohnraum } }
+  essen_light_0: !include { file: bindings/light.yml, vars: { room: essen, idx: 0, entity_id: switch.lichtschaltaktor_eg_licht_eg_esszimmer, text: Licht } }
+  essen_cover_0: !include { file: bindings/cover.yml, vars: { room: essen, idx: 0, entity_id: cover.rolladenaktor_eg_rolladen_eg_esszimmer, text: Esszimmer } }
+  essen_cover_1: !include { file: bindings/cover.yml, vars: { room: essen, idx: 1, entity_id: cover.rolladenaktor_eg_rolladen_eg_schiebetur, text: "Schiebetür" } }
+  essen_circuit_0: !include { file: bindings/circuit.yml, vars: { room: essen, idx: 0, entity_id: number.fussbodenheizung_eg_heizkreis_eg_esszimmer_1_level, text: "Kreis 1" } }
+  essen_circuit_1: !include { file: bindings/circuit.yml, vars: { room: essen, idx: 1, entity_id: number.fussbodenheizung_eg_heizkreis_eg_esszimmer_2_level, text: "Kreis 2" } }
+  essen_circuit_2: !include { file: bindings/circuit.yml, vars: { room: essen, idx: 2, entity_id: number.fussbodenheizung_eg_heizkreis_eg_esszimmer_3_level, text: "Kreis 3" } }
+  essen_smoke: !include { file: bindings/smoke.yml, vars: { room: essen, entity_id: binary_sensor.rauchmelder_eg_esszimmer_smoke } }
+
+  # --- EG: Küche ---
+  kueche_climate: !include { file: bindings/room.yml, vars: { room: kueche, entity_id: climate.wandthermostat_eg_wohnraum } }
+  kueche_light_0: !include { file: bindings/light.yml, vars: { room: kueche, idx: 0, entity_id: switch.lichtschaltaktor_eg_licht_eg_kuche, text: "Küche" } }
+  kueche_light_1: !include { file: bindings/light.yml, vars: { room: kueche, idx: 1, entity_id: switch.lichtschaltaktor_eg_licht_eg_kucheninsel, text: "Kücheninsel", swing: false } }
+  kueche_cover_0: !include { file: bindings/cover.yml, vars: { room: kueche, idx: 0, entity_id: cover.rolladenaktor_eg_rolladen_eg_kuche, text: "Küche" } }
+  kueche_circuit_0: !include { file: bindings/circuit.yml, vars: { room: kueche, idx: 0, entity_id: number.fussbodenheizung_eg_heizkreis_eg_esszimmer_1_level, text: "Esszimmer 1" } }
+  kueche_circuit_1: !include { file: bindings/circuit.yml, vars: { room: kueche, idx: 1, entity_id: number.fussbodenheizung_eg_heizkreis_eg_esszimmer_2_level, text: "Esszimmer 2" } }
+  kueche_circuit_2: !include { file: bindings/circuit.yml, vars: { room: kueche, idx: 2, entity_id: number.fussbodenheizung_eg_heizkreis_eg_esszimmer_3_level, text: "Esszimmer 3" } }
+
+  # --- EG: Flur ---
+  flur_eg_climate: !include { file: bindings/room.yml, vars: { room: flur_eg, entity_id: climate.wandthermostat_eg_flur } }
+  flur_eg_light_0: !include { file: bindings/light.yml, vars: { room: flur_eg, idx: 0, entity_id: switch.lichtschaltaktor_eg_licht_eg_flur, text: Licht } }
+  flur_eg_light_1: !include { file: bindings/light.yml, vars: { room: flur_eg, idx: 1, entity_id: switch.lichtschaltaktor_eg_licht_eg_treppe, text: "Treppe OG", swing: false } }
+  flur_eg_circuit_0: !include { file: bindings/circuit.yml, vars: { room: flur_eg, idx: 0, entity_id: number.fussbodenheizung_eg_heizkreis_eg_flur_level, text: Flur } }
+
+  # --- EG: Bad ---
+  bad_eg_climate: !include { file: bindings/room.yml, vars: { room: bad_eg, entity_id: climate.wandthermostat_eg_bad } }
+  bad_eg_light_0: !include { file: bindings/light.yml, vars: { room: bad_eg, idx: 0, entity_id: switch.lichtschaltaktor_eg_licht_eg_bad, text: Licht } }
+  bad_eg_contact_0: !include { file: bindings/contact.yml, vars: { room: bad_eg, idx: 0, entity_id: binary_sensor.fensterkontakt_bad_eg, text: Fenster } }
+  bad_eg_circuit_0: !include { file: bindings/circuit.yml, vars: { room: bad_eg, idx: 0, entity_id: number.fussbodenheizung_eg_heizkreis_eg_bad_level, text: Bad } }
+
+  # --- EG: Eingang (Anbau) ---
+  eingang_climate: !include { file: bindings/room.yml, vars: { room: eingang, entity_id: climate.wandthermostat_eg_flur } }
+  eingang_light_0: !include { file: bindings/light.yml, vars: { room: eingang, idx: 0, entity_id: switch.lichtschaltaktor_og_licht_og_anbau_treppe, text: Treppe, swing: false } }
+  eingang_circuit_0: !include { file: bindings/circuit.yml, vars: { room: eingang, idx: 0, entity_id: number.fussbodenheizung_eg_heizkreis_eg_flur_level, text: "Flur EG" } }
+
+  # --- Garagen ---
+  garage_light_0: !include { file: bindings/light.yml, vars: { room: garage, idx: 0, entity_id: switch.garage_licht_switch_module_l1, text: Licht, swing: false } }
+
+  # --- Keller: Waschküche ---
+  wasch_climate: !include { file: bindings/room.yml, vars: { room: wasch, entity_id: climate.wandthermostat_keller_waschkuche } }
+  wasch_light_0: !include { file: bindings/light.yml, vars: { room: wasch, idx: 0, entity_id: switch.lichtschaltaktor_keller_licht_keller_kuche, text: Licht } }
+  wasch_light_1: !include { file: bindings/light.yml, vars: { room: wasch, idx: 1, entity_id: switch.lichtschaltaktor_keller_licht_keller_treppe, text: Kellertreppe, swing: false } }
+  wasch_contact_0: !include { file: bindings/contact.yml, vars: { room: wasch, idx: 0, entity_id: binary_sensor.myggbett_door_window_sensor_tur, text: Fenster } }
+  wasch_circuit_0: !include { file: bindings/circuit.yml, vars: { room: wasch, idx: 0, entity_id: number.fussbodenheizung_keller_heizkreis_keller_waschkuche_level, text: "Waschküche" } }
+  wasch_smoke: !include { file: bindings/smoke.yml, vars: { room: wasch, entity_id: binary_sensor.rauchmelder_keller_waschkuche_smoke } }
+
+  # --- Keller: Heizung ---
+  heiz_light_0: !include { file: bindings/light.yml, vars: { room: heiz, idx: 0, entity_id: switch.lichtschaltaktor_keller_ch26, text: Licht } }
+  heiz_smoke: !include { file: bindings/smoke.yml, vars: { room: heiz, entity_id: binary_sensor.rauchmelder_keller_heizungsraum_smoke } }
+
+  # --- Keller: Bad ---
+  bad_k_climate: !include { file: bindings/room.yml, vars: { room: bad_k, entity_id: climate.wandthermostat_keller_bad } }
+  bad_k_light_0: !include { file: bindings/light.yml, vars: { room: bad_k, idx: 0, entity_id: switch.lichtschaltaktor_keller_licht_keller_bad, text: Licht } }
+  bad_k_contact_0: !include { file: bindings/contact.yml, vars: { room: bad_k, idx: 0, entity_id: binary_sensor.fensterkontakt_keller_bad, text: "Balkontür" } }
+  bad_k_circuit_0: !include { file: bindings/circuit.yml, vars: { room: bad_k, idx: 0, entity_id: number.fussbodenheizung_keller_heizkreis_keller_bad_level, text: Bad } }
+
+  # --- Keller: Großes Büro ---
+  buero_climate: !include { file: bindings/room.yml, vars: { room: buero, entity_id: climate.wandthermostat_keller_grosses_buro_wandthermostat_keller_zentrale } }
+  buero_light_0: !include { file: bindings/light.yml, vars: { room: buero, idx: 0, entity_id: switch.lichtschaltaktor_keller_licht_keller_grosses_zimmer, text: Licht } }
+  buero_circuit_0: !include { file: bindings/circuit.yml, vars: { room: buero, idx: 0, entity_id: number.fussbodenheizung_keller_heizkreis_keller_grosses_buro_1_level, text: "Kreis 1" } }
+  buero_circuit_1: !include { file: bindings/circuit.yml, vars: { room: buero, idx: 1, entity_id: number.fussbodenheizung_keller_heizkreis_keller_grosses_buro_2_level, text: "Kreis 2" } }
+  buero_smoke: !include { file: bindings/smoke.yml, vars: { room: buero, entity_id: binary_sensor.rauchmelder_keller_zentrale_smoke } }
+
+  # --- Keller: Kleines Büro ---
+  buero2_climate: !include { file: bindings/room.yml, vars: { room: buero2, entity_id: climate.wandthermostat_keller_kleines_buro } }
+  buero2_light_0: !include { file: bindings/light.yml, vars: { room: buero2, idx: 0, entity_id: switch.lichtschaltaktor_keller_licht_keller_kleines_zimmer, text: Licht } }
+  buero2_contact_0: !include { file: bindings/contact.yml, vars: { room: buero2, idx: 0, entity_id: binary_sensor.myggbett_door_window_sensor_tur_2, text: "Balkontür" } }
+  buero2_circuit_0: !include { file: bindings/circuit.yml, vars: { room: buero2, idx: 0, entity_id: number.fussbodenheizung_keller_heizkreis_keller_kleines_buro_1_level, text: "Kreis 1" } }
+  buero2_circuit_1: !include { file: bindings/circuit.yml, vars: { room: buero2, idx: 1, entity_id: number.fussbodenheizung_keller_heizkreis_keller_kleines_buro_2_level, text: "Kreis 2" } }
+  buero2_smoke: !include { file: bindings/smoke.yml, vars: { room: buero2, entity_id: binary_sensor.rauchmelder_keller_kleiner_raum_smoke } }
