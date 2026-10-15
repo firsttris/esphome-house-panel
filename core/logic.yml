@@ -24,6 +24,7 @@ esphome:
             house::call_action = [](const std::string &action, const std::string &entity) {
               id(ha_action)->execute(action, entity);
             };
+            house::show_fps = ${show_fps | default('true')};
             house::build();
 
 globals:

@@ -7,6 +7,8 @@ substitutions:
   device_name: panel-haus
   friendly_name: Panel Haus
   house_name: Zuhause
+  # FPS-Anzeige unten links und im Log ("false" schaltet sie ab)
+  show_fps: "true"
   weather_entity: weather.forecast_home
   lock_entity: lock.turschlossantrieb_haustur_eg
   # Energie (W)

@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 #include <lvgl.h>
+#include "esphome/core/log.h"
 
 namespace house {
 
@@ -803,12 +804,14 @@ inline void make_flow(const char *key, std::vector<Pt> pts, uint32_t color) {
 }
 
 // Fläche um einen Punkt (Bildschirm-Koordinaten) als ungültig markieren
-inline void invalidate_dot(const lv_point_t &p) {
+inline void invalidate_dot(const lv_point_t &p, const lv_point_t &q) {
   lv_area_t a;
   lv_obj_get_coords(dot_layer, &a);
-  lv_area_t d = {a.x1 + p.x - DOT_R - 1, a.y1 + p.y - DOT_R - 1, a.x1 + p.x + DOT_R + 1, a.y1 + p.y + DOT_R + 1};
+  lv_area_t d = {a.x1 + std::min(p.x, q.x) - DOT_R - 1, a.y1 + std::min(p.y, q.y) - DOT_R - 1,
+                 a.x1 + std::max(p.x, q.x) + DOT_R + 1, a.y1 + std::max(p.y, q.y) + DOT_R + 1};
   lv_obj_invalidate_area(dot_layer, &d);
 }
+inline void invalidate_dot(const lv_point_t &p) { invalidate_dot(p, p); }
 
 inline void flow_set(const char *key, float watts, int dir = 1, uint32_t color = 0) {
   auto it = flows.find(key);
@@ -854,9 +857,10 @@ inline void flows_step(float dt) {
         d -= seg;
       }
       if (np.x != f.dots[i].x || np.y != f.dots[i].y) {
-        invalidate_dot(f.dots[i]);
+        // alte und neue Position als eine Fläche: LVGL merkt sich nur 32 Flächen pro Bild,
+        // darüber zeichnet es den ganzen Bildschirm neu
+        invalidate_dot(f.dots[i], np);
         f.dots[i] = np;
-        invalidate_dot(np);
       }
     }
   }
@@ -1398,6 +1402,58 @@ inline void open_room(int ri) {
 // ---------------------------------------------------------------------------
 // Aufbau
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// FPS-Anzeige: fertige Bilder pro Sekunde und Zeit pro Bild (Zeichnen + Kopieren)
+// ---------------------------------------------------------------------------
+inline bool show_fps = true;
+inline lv_obj_t *fps_label = nullptr;
+inline uint32_t fps_frames = 0, fps_busy = 0, fps_t0 = 0, fps_window = 0;
+inline uint64_t fps_px = 0;  // neu gezeichnete Pixel
+inline uint32_t fps_flush = 0, fps_f0 = 0;  // Zeit fürs Kopieren in die Anzeige
+
+inline void fps_init() {
+  lv_display_t *disp = lv_display_get_default();
+  lv_display_add_event_cb(disp, [](lv_event_t *) { fps_t0 = lv_tick_get(); }, LV_EVENT_RENDER_START, nullptr);
+  lv_display_add_event_cb(disp, [](lv_event_t *) {
+    fps_frames++;
+    fps_busy += lv_tick_elaps(fps_t0);
+  }, LV_EVENT_RENDER_READY, nullptr);
+  lv_display_add_event_cb(disp, [](lv_event_t *) { fps_f0 = lv_tick_get(); }, LV_EVENT_FLUSH_START, nullptr);
+  lv_display_add_event_cb(disp, [](lv_event_t *) { fps_flush += lv_tick_elaps(fps_f0); }, LV_EVENT_FLUSH_FINISH, nullptr);
+  lv_display_add_event_cb(disp, [](lv_event_t *e) {
+    auto *a = (const lv_area_t *) lv_event_get_param(e);
+    if (a)
+      fps_px += (uint64_t) lv_area_get_width(a) * lv_area_get_height(a);
+  }, LV_EVENT_INVALIDATE_AREA, nullptr);
+  fps_window = lv_tick_get();
+  if (show_fps) {
+    fps_label = text(lv_layer_top(), "-- fps", ui.f11, MUTE);
+    lv_obj_set_pos(fps_label, 10, 582);
+  }
+}
+
+inline void fps_update() {
+  uint32_t ms = lv_tick_elaps(fps_window);
+  if (ms < 900)
+    return;
+  float fps = fps_frames * 1000.0f / ms;
+  float per = fps_frames ? (float) fps_busy / fps_frames : 0;
+  float copy = fps_frames ? (float) fps_flush / fps_frames : 0;
+  // Anteil des Bildschirms, der pro Bild neu gezeichnet wird
+  float share = fps_frames ? 100.0f * fps_px / fps_frames / (1024.0f * 600.0f) : 0;
+  // fps · Zeit pro Bild (davon Kopieren) · Anteil des Bildschirms
+  char buf[64];
+  snprintf(buf, sizeof buf, "%d fps · %.1f ms (Kopie %.1f) · %d %%", (int) lroundf(fps), per, copy, (int) lroundf(share));
+  if (fps_label)
+    lv_label_set_text(fps_label, buf);
+  if (show_fps)
+    ESP_LOGI("house", "%s", buf);
+  fps_frames = fps_busy = 0;
+  fps_px = 0;
+  fps_flush = 0;
+  fps_window = lv_tick_get();
+}
+
 inline void build() {
   auto &R = rooms_def();
   rooms.resize(R.size());
@@ -1502,6 +1558,7 @@ inline void build() {
   render_canvas();
   update_flows();
   build_side();
+  fps_init();
 }
 
 // Heizkreise legen ihre Objekte beim ersten Wert an
@@ -1533,6 +1590,7 @@ inline void tick() {
 }
 
 inline void slow_tick() {
+  fps_update();
   if (canvas_dirty)
     render_canvas();
   if (side_dirty)
