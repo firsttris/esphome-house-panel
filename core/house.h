@@ -794,23 +794,8 @@ inline void make_flow(const char *key, std::vector<Pt> pts, uint32_t color) {
   lv_obj_set_style_line_color(f.line, C(color), 0);
   lv_obj_set_style_line_width(f.line, 2, 0);
   lv_obj_set_style_line_opa(f.line, 50, 0);
-  f.dots.resize(std::max(3, (int) lroundf(f.len / 85)));
-}
-
-inline void flow_set(const char *key, float watts, int dir = 1, uint32_t color = 0) {
-  auto it = flows.find(key);
-  if (it == flows.end())
-    return;
-  Flow &f = it->second;
-  f.speed = std::fabs(watts) < 30 ? 0 : 20 + std::min(std::fabs(watts) / 1000.0f, 6.0f) * 14;
-  f.dir = dir;
-  if (color && color != f.color) {
-    f.color = color;
-    lv_obj_set_style_line_color(f.line, C(color), 0);
-  }
-  lv_obj_set_style_line_opa(f.line, f.speed > 0 ? 56 : 15, 0);
-  if (dot_layer)
-    lv_obj_invalidate(dot_layer);
+  // ein Punkt je ~85 px, kurze Leitungen haben einen
+  f.dots.resize(std::max(1, (int) lroundf(f.len / 85)));
 }
 
 // Fläche um einen Punkt (Bildschirm-Koordinaten) als ungültig markieren
@@ -821,12 +806,36 @@ inline void invalidate_dot(const lv_point_t &p) {
   lv_obj_invalidate_area(dot_layer, &d);
 }
 
+inline void flow_set(const char *key, float watts, int dir = 1, uint32_t color = 0) {
+  auto it = flows.find(key);
+  if (it == flows.end())
+    return;
+  Flow &f = it->second;
+  float speed = std::fabs(watts) < 30 ? 0 : 20 + std::min(std::fabs(watts) / 1000.0f, 6.0f) * 14;
+  bool was_on = f.speed > 0, on = speed > 0;
+  f.speed = speed;
+  f.dir = dir;
+  bool recolor = color && color != f.color;
+  if (recolor) {
+    f.color = color;
+    lv_obj_set_style_line_color(f.line, C(color), 0);
+  }
+  if (was_on != on)
+    lv_obj_set_style_line_opa(f.line, on ? 56 : 15, 0);
+  // Nur die Flächen der Punkte neu zeichnen, wenn der Fluss an/aus geht oder die Farbe wechselt
+  if (dot_layer && (was_on != on || recolor))
+    for (auto &p : f.dots)
+      invalidate_dot(p);
+}
+
 inline void flows_step(float dt) {
   for (auto &kv : flows) {
     Flow &f = kv.second;
     if (f.speed == 0)
       continue;
-    f.pos = fmodf(f.pos + f.dir * f.speed * S * dt + f.len, f.len);
+    // kurze Leitungen nicht durchrasen: ein Durchlauf dauert mindestens 1,5 s
+    float v = std::min(f.speed * S, f.len / 1.5f);
+    f.pos = fmodf(f.pos + f.dir * v * dt + f.len, f.len);
     for (size_t i = 0; i < f.dots.size(); i++) {
       float d = fmodf(f.pos + i * f.len / f.dots.size(), f.len);
       lv_point_t np = f.dots[i];
@@ -1016,57 +1025,52 @@ inline std::string all_light_entities() {
 
 inline std::string lock_entity;
 
-inline void build_overview() {
-  lv_obj_t *side = ui.side;
+// Übersicht: einmal aufbauen, danach nur Texte und Farben aktualisieren
+struct Overview {
+  lv_obj_t *kpi[4] = {}, *kv[4] = {}, *ks[4] = {}, *ki[4] = {};
+  lv_obj_t *rv[6] = {};
+  lv_obj_t *lock_btn = nullptr, *lock_icon = nullptr, *lock_text = nullptr;
+};
+inline Overview ov;
+inline bool ov_dirty = false;
+
+inline void set_text(lv_obj_t *o, const char *t) {
+  // nur bei echter Änderung neu zeichnen
+  if (o && strcmp(lv_label_get_text(o), t) != 0)
+    lv_label_set_text(o, t);
+}
+
+inline void update_overview() {
+  if (selected >= 0 || ov.kv[0] == nullptr)
+    return;
   auto &e = energy;
-  char a[48], b[64];
-  caps(side, "ENERGIE JETZT");
-  lv_obj_t *grid = lv_obj_create(side);
-  lv_obj_remove_style_all(grid);
-  lv_obj_set_size(grid, lv_pct(100), LV_SIZE_CONTENT);
-  lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
-  lv_obj_set_style_pad_row(grid, 8, 0);
-  lv_obj_set_style_pad_column(grid, 8, 0);
-  auto kpi = [&](const char *icon, uint32_t col, const char *val, const char *sub) {
-    lv_obj_t *k = lv_obj_create(grid);
-    lv_obj_remove_style_all(k);
-    lv_obj_set_size(k, 166, 62);
-    lv_obj_set_style_bg_color(k, C(CARD), 0);
-    lv_obj_set_style_bg_opa(k, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(k, C(LINE), 0);
-    lv_obj_set_style_border_width(k, 1, 0);
-    lv_obj_set_style_radius(k, 16, 0);
-    lv_obj_remove_flag(k, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t *bub = box(k, 10, 12, 36, 36, col, 40, 12);
-    lv_obj_t *i = text(bub, icon, ui.i20, col);
-    lv_obj_center(i);
-    lv_obj_t *v = text(k, val, ui.f20b, TEXT);
-    lv_obj_set_pos(v, 56, 9);
-    lv_obj_t *s = text(k, sub, ui.f12, MUTE);
-    lv_obj_set_pos(s, 56, 36);
-  };
+  char a[48], b[64], p1[12], p2[12];
   fmt_kw(a, sizeof a, e.pv + e.hoy);
-  char pv1[12], pv2[12];
-  fmt_kw(pv1, sizeof pv1, e.pv);
-  fmt_kw(pv2, sizeof pv2, e.hoy);
-  snprintf(b, sizeof b, "Deye %s · Hoym. %s", pv1, pv2);
   strcat(a, " kW");
-  kpi("\U000F0A72", AMBER, a, b);
+  fmt_kw(p1, sizeof p1, e.pv);
+  fmt_kw(p2, sizeof p2, e.hoy);
+  snprintf(b, sizeof b, "Deye %s · Hoym. %s", p1, p2);
+  set_text(ov.kv[0], a);
+  set_text(ov.ks[0], b);
   fmt_kw(a, sizeof a, e.house);
   strcat(a, " kW");
-  kpi("\U000F1903", TEXT, a, "Haus");
+  set_text(ov.kv[1], a);
   if (std::isnan(e.soc))
     snprintf(a, sizeof a, "-- %%");
   else
     snprintf(a, sizeof a, "%d %%", (int) lroundf(e.soc));
-  fmt_kw(pv1, sizeof pv1, e.battery);
-  snprintf(b, sizeof b, e.battery <= 0 ? "lädt %s kW" : "gibt %s kW", pv1);
-  kpi("\U000F12A3", GREEN, a, b);
+  fmt_kw(p1, sizeof p1, e.battery);
+  snprintf(b, sizeof b, e.battery <= 0 ? "lädt %s kW" : "gibt %s kW", p1);
+  set_text(ov.kv[2], a);
+  set_text(ov.ks[2], b);
   fmt_kw(a, sizeof a, e.grid);
   strcat(a, " kW");
-  kpi("\U000F0D3E", e.grid >= 0 ? PINK : SKY, a, e.grid >= 0 ? "Bezug" : "Einspeisung");
+  set_text(ov.kv[3], a);
+  set_text(ov.ks[3], e.grid >= 0 ? "Bezug" : "Einspeisung");
+  uint32_t gc = e.grid >= 0 ? PINK : SKY;
+  lv_obj_set_style_text_color(ov.ki[3], C(gc), 0);
+  lv_obj_set_style_bg_color(lv_obj_get_parent(ov.ki[3]), C(gc), 0);
 
-  // Status
   int lights_on = 0, circ_open = 0, circ_all = 0, covers_n = 0;
   float covers_sum = 0;
   std::string open_list;
@@ -1091,31 +1095,74 @@ inline void build_overview() {
         circ_open += c.level > 0.5f;
       }
   }
-  lv_obj_t *st = card(side);
   snprintf(a, sizeof a, "%d", lights_on);
-  row(st, "\U000F0335", AMBER, "Lichter an", a);
-  row(st, "\U000F11DC", SKY, "Fenster offen", open_list.empty() ? "keins" : open_list.c_str());
+  set_text(ov.rv[0], a);
+  set_text(ov.rv[1], open_list.empty() ? "keins" : open_list.c_str());
   if (covers_n)
     snprintf(a, sizeof a, "Ø %d %% offen", (int) lroundf(covers_sum / covers_n));
   else
     snprintf(a, sizeof a, "--");
-  row(st, "\U000F111C", MUTE, "Rollläden", a);
+  set_text(ov.rv[2], a);
   snprintf(a, sizeof a, "%d von %d Kreisen offen", circ_open, circ_all);
-  row(st, "\U000F0438", 0xFF8A3D, "Fußbodenheizung", a);
-  fmt_kw(pv1, sizeof pv1, e.car);
-  if (std::isnan(e.car_today))
-    snprintf(b, sizeof b, e.car > 30 ? "lädt %s kW" : "bereit", pv1);
-  else {
+  set_text(ov.rv[3], a);
+  fmt_kw(p1, sizeof p1, e.car);
+  if (std::isnan(e.car_today)) {
+    snprintf(b, sizeof b, e.car > 30 ? "lädt %s kW" : "bereit", p1);
+  } else {
     char t[12];
     snprintf(t, sizeof t, "%.1f", e.car_today);
     if (char *dd = strchr(t, '.'))
       *dd = ',';
-    snprintf(b, sizeof b, e.car > 30 ? "lädt %s kW · heute %s kWh" : "bereit · heute %s kWh", e.car > 30 ? pv1 : t, t);
+    if (e.car > 30)
+      snprintf(b, sizeof b, "lädt %s kW · heute %s kWh", p1, t);
+    else
+      snprintf(b, sizeof b, "bereit · heute %s kWh", t);
   }
-  row(st, "\U000F05F1", GREEN, "Wallbox", b);
-  fmt_kw(pv1, sizeof pv1, e.heater);
-  snprintf(b, sizeof b, e.heater > 30 ? "%s kW" : "aus", pv1);
-  row(st, "\U000F0F92", 0xFF7A45, "Heizstab", b);
+  set_text(ov.rv[4], b);
+  fmt_kw(p1, sizeof p1, e.heater);
+  snprintf(b, sizeof b, e.heater > 30 ? "%s kW" : "aus", p1);
+  set_text(ov.rv[5], b);
+
+  set_text(ov.lock_icon, locked ? "\U000F033E" : "\U000F0FC6");
+  set_text(ov.lock_text, locked ? "Abgeschlossen" : "Abschließen");
+  uint32_t lc = locked ? GREEN : TEXT;
+  lv_obj_set_style_text_color(ov.lock_icon, C(lc), 0);
+  lv_obj_set_style_text_color(ov.lock_text, C(lc), 0);
+  lv_obj_set_style_border_color(ov.lock_btn, C(locked ? 0x2E7A4D : LINE), 0);
+  ov_dirty = false;
+}
+
+inline void build_overview() {
+  lv_obj_t *side = ui.side;
+  caps(side, "ENERGIE JETZT");
+  lv_obj_t *grid = lv_obj_create(side);
+  lv_obj_remove_style_all(grid);
+  lv_obj_set_size(grid, lv_pct(100), LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
+  lv_obj_set_style_pad_row(grid, 8, 0);
+  lv_obj_set_style_pad_column(grid, 8, 0);
+  const struct { const char *icon; uint32_t col; const char *sub; } K[4] = {
+      {"\U000F0A72", AMBER, ""}, {"\U000F1903", TEXT, "Haus"}, {"\U000F12A3", GREEN, ""}, {"\U000F0D3E", PINK, ""}};
+  for (int n = 0; n < 4; n++) {
+    lv_obj_t *k = box(grid, 0, 0, 166, 62, CARD, LV_OPA_COVER, 16);
+    lv_obj_set_style_border_color(k, C(LINE), 0);
+    lv_obj_set_style_border_width(k, 1, 0);
+    lv_obj_t *bub = box(k, 10, 12, 36, 36, K[n].col, 40, 12);
+    ov.ki[n] = text(bub, K[n].icon, ui.i20, K[n].col);
+    lv_obj_center(ov.ki[n]);
+    ov.kv[n] = text(k, "--", ui.f20b, TEXT);
+    lv_obj_set_pos(ov.kv[n], 56, 9);
+    ov.ks[n] = text(k, K[n].sub, ui.f12, MUTE);
+    lv_obj_set_pos(ov.ks[n], 56, 36);
+    ov.kpi[n] = k;
+  }
+
+  lv_obj_t *st = card(side);
+  const struct { const char *icon; uint32_t col; const char *label; } R6[6] = {
+      {"\U000F0335", AMBER, "Lichter an"},      {"\U000F11DC", SKY, "Fenster offen"}, {"\U000F111C", MUTE, "Rollläden"},
+      {"\U000F0438", 0xFF8A3D, "Fußbodenheizung"}, {"\U000F05F1", GREEN, "Wallbox"},  {"\U000F0F92", 0xFF7A45, "Heizstab"}};
+  for (int n = 0; n < 6; n++)
+    ov.rv[n] = lv_obj_get_child(row(st, R6[n].icon, R6[n].col, R6[n].label, ""), 2);
 
   lv_obj_t *btns = lv_obj_create(side);
   lv_obj_remove_style_all(btns);
@@ -1128,19 +1175,21 @@ inline void build_overview() {
         l.on = false;
     for (auto *p : panes)
       paint_pane(p);
-    side_dirty = true;
+    ov_dirty = true;
     if (call_action)
       call_action("homeassistant.turn_off", all_light_entities());
   }, nullptr);
-  button(btns, locked ? "\U000F033E" : "\U000F0FC6", locked ? "Abgeschlossen" : "Abschließen", locked ? GREEN : TEXT,
-         [](lv_event_t *) {
-           if (call_action && !lock_entity.empty())
-             call_action(locked ? "lock.unlock" : "lock.lock", lock_entity);
-           locked = !locked;
-           side_dirty = true;
-         }, nullptr);
+  ov.lock_btn = button(btns, "\U000F0FC6", "Abschließen", TEXT, [](lv_event_t *) {
+    if (call_action && !lock_entity.empty())
+      call_action(locked ? "lock.unlock" : "lock.lock", lock_entity);
+    locked = !locked;
+    ov_dirty = true;
+  }, nullptr);
+  ov.lock_icon = lv_obj_get_child(ov.lock_btn, 0);
+  ov.lock_text = lv_obj_get_child(ov.lock_btn, 1);
   if (ui.subtitle)
     lv_label_set_text(ui.subtitle, "Alle Etagen");
+  update_overview();
 }
 
 // Licht-Kachel in der Raumansicht: Pendeln wie im Room-Panel
@@ -1319,6 +1368,7 @@ inline void build_side() {
     return;
   int32_t scroll = lv_obj_get_scroll_y(ui.side);
   lv_obj_clean(ui.side);
+  ov = Overview{};
   for (auto *r : refs)
     delete r;
   refs.clear();
@@ -1480,6 +1530,8 @@ inline void slow_tick() {
     render_canvas();
   if (side_dirty)
     build_side();
+  else if (ov_dirty)
+    update_overview();
 }
 
 // ---------------------------------------------------------------------------
@@ -1489,6 +1541,14 @@ template<typename T> inline T &at(std::vector<T> &v, int idx) {
   if ((int) v.size() <= idx)
     v.resize(idx + 1);
   return v[idx];
+}
+
+// Geänderter Raum: Raumansicht neu aufbauen, falls er offen ist, sonst nur die Übersicht auffrischen
+inline void mark_changed(int ri) {
+  if (selected == ri)
+    side_dirty = true;
+  else if (selected < 0)
+    ov_dirty = true;
 }
 
 inline void room_temp(const std::string &id, float t) {
@@ -1537,7 +1597,7 @@ inline void light(const std::string &id, int idx, const std::string &entity, con
   l.known = true;
   for (auto *p : r->panes)
     paint_pane(p);
-  side_dirty = true;
+  mark_changed(room_index[id]);
 }
 
 inline void cover(const std::string &id, int idx, const std::string &entity, const std::string &name, float pos) {
@@ -1551,7 +1611,7 @@ inline void cover(const std::string &id, int idx, const std::string &entity, con
   for (auto *p : r->panes)
     if (p->cover == idx)
       paint_pane(p);
-  side_dirty = true;
+  mark_changed(room_index[id]);
 }
 
 inline void contact(const std::string &id, int idx, const std::string &entity, const std::string &name, bool open) {
@@ -1565,7 +1625,7 @@ inline void contact(const std::string &id, int idx, const std::string &entity, c
   for (auto *p : r->panes)
     if (p->sensor == idx)
       paint_pane(p);
-  side_dirty = true;
+  mark_changed(room_index[id]);
 }
 
 // Ventilöffnung: Homematic liefert 0..1, andere 0..100
@@ -1579,7 +1639,7 @@ inline void circuit(const std::string &id, int idx, const std::string &name, flo
   int ri = room_index[id];
   ensure_heat(ri);
   paint_heat(ri);
-  side_dirty = true;
+  mark_changed(room_index[id]);
 }
 
 inline void smoke(const std::string &id, bool on) {
@@ -1613,14 +1673,14 @@ inline void set_energy(const std::string &key, float v) {
     e.car_today = v;
   update_flows();
   if (selected < 0)
-    side_dirty = true;
+    ov_dirty = true;
 }
 
 inline void set_lock(const std::string &entity, bool is_locked) {
   lock_entity = entity;
   locked = is_locked;
   if (selected < 0)
-    side_dirty = true;
+    ov_dirty = true;
 }
 
 inline void set_night(bool n) {
