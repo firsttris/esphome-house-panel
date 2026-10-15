@@ -764,16 +764,23 @@ inline void build_heat(int ri) {
 
 // ---------------------------------------------------------------------------
 // Energiefluss: Punkte laufen entlang von Linien
+//
+// Alle Punkte zeichnet eine einzige durchsichtige Ebene selbst (kein Objekt je
+// Punkt). Ein LVGL-Timer bewegt sie im Bildschirmtakt; neu gezeichnet werden
+// nur die kleinen Flächen um die Punkte.
 // ---------------------------------------------------------------------------
+constexpr int32_t DOT_R = 3;
+
 struct Flow {
   std::vector<lv_point_precise_t> pts;
   lv_obj_t *line = nullptr;
-  std::vector<lv_obj_t *> dots;
+  std::vector<lv_point_t> dots;  // aktuelle Position je Punkt (Szene-Koordinaten)
   float len = 0, pos = 0, speed = 0;
   int dir = 1;
   uint32_t color;
 };
 inline std::map<std::string, Flow> flows;
+inline lv_obj_t *dot_layer = nullptr;
 
 inline void make_flow(const char *key, std::vector<Pt> pts, uint32_t color) {
   Flow &f = flows[key];
@@ -787,9 +794,7 @@ inline void make_flow(const char *key, std::vector<Pt> pts, uint32_t color) {
   lv_obj_set_style_line_color(f.line, C(color), 0);
   lv_obj_set_style_line_width(f.line, 2, 0);
   lv_obj_set_style_line_opa(f.line, 50, 0);
-  int n = std::max(3, (int) lroundf(f.len / 85));
-  for (int i = 0; i < n; i++)
-    f.dots.push_back(box(ui.scene, 0, 0, 6, 6, color, LV_OPA_COVER, LV_RADIUS_CIRCLE));
+  f.dots.resize(std::max(3, (int) lroundf(f.len / 85)));
 }
 
 inline void flow_set(const char *key, float watts, int dir = 1, uint32_t color = 0) {
@@ -802,12 +807,18 @@ inline void flow_set(const char *key, float watts, int dir = 1, uint32_t color =
   if (color && color != f.color) {
     f.color = color;
     lv_obj_set_style_line_color(f.line, C(color), 0);
-    for (auto *d : f.dots)
-      lv_obj_set_style_bg_color(d, C(color), 0);
   }
   lv_obj_set_style_line_opa(f.line, f.speed > 0 ? 56 : 15, 0);
-  for (auto *d : f.dots)
-    set_hidden(d, f.speed == 0);
+  if (dot_layer)
+    lv_obj_invalidate(dot_layer);
+}
+
+// Fläche um einen Punkt (Bildschirm-Koordinaten) als ungültig markieren
+inline void invalidate_dot(const lv_point_t &p) {
+  lv_area_t a;
+  lv_obj_get_coords(dot_layer, &a);
+  lv_area_t d = {a.x1 + p.x - DOT_R - 1, a.y1 + p.y - DOT_R - 1, a.x1 + p.x + DOT_R + 1, a.y1 + p.y + DOT_R + 1};
+  lv_obj_invalidate_area(dot_layer, &d);
 }
 
 inline void flows_step(float dt) {
@@ -818,18 +829,64 @@ inline void flows_step(float dt) {
     f.pos = fmodf(f.pos + f.dir * f.speed * S * dt + f.len, f.len);
     for (size_t i = 0; i < f.dots.size(); i++) {
       float d = fmodf(f.pos + i * f.len / f.dots.size(), f.len);
+      lv_point_t np = f.dots[i];
       for (size_t k = 1; k < f.pts.size(); k++) {
         float seg = hypotf(f.pts[k].x - f.pts[k - 1].x, f.pts[k].y - f.pts[k - 1].y);
         if (d <= seg || k == f.pts.size() - 1) {
           float t = seg > 0 ? std::min(1.0f, d / seg) : 0;
-          lv_obj_set_pos(f.dots[i], lroundf(f.pts[k - 1].x + (f.pts[k].x - f.pts[k - 1].x) * t) - 3,
-                         lroundf(f.pts[k - 1].y + (f.pts[k].y - f.pts[k - 1].y) * t) - 3);
+          np = {(int32_t) lroundf(f.pts[k - 1].x + (f.pts[k].x - f.pts[k - 1].x) * t),
+                (int32_t) lroundf(f.pts[k - 1].y + (f.pts[k].y - f.pts[k - 1].y) * t)};
           break;
         }
         d -= seg;
       }
+      if (np.x != f.dots[i].x || np.y != f.dots[i].y) {
+        invalidate_dot(f.dots[i]);
+        f.dots[i] = np;
+        invalidate_dot(np);
+      }
     }
   }
+}
+
+inline void dot_draw_cb(lv_event_t *e) {
+  lv_layer_t *layer = lv_event_get_layer(e);
+  lv_area_t a;
+  lv_obj_get_coords(dot_layer, &a);
+  lv_draw_rect_dsc_t d;
+  lv_draw_rect_dsc_init(&d);
+  d.radius = LV_RADIUS_CIRCLE;
+  d.bg_opa = LV_OPA_COVER;
+  for (auto &kv : flows) {
+    Flow &f = kv.second;
+    if (f.speed == 0)
+      continue;
+    d.bg_color = C(f.color);
+    for (auto &p : f.dots) {
+      lv_area_t r = {a.x1 + p.x - DOT_R, a.y1 + p.y - DOT_R, a.x1 + p.x + DOT_R - 1, a.y1 + p.y + DOT_R - 1};
+      lv_draw_rect(layer, &d, &r);
+    }
+  }
+}
+
+inline void flow_timer_cb(lv_timer_t *) {
+  static uint32_t last = lv_tick_get();
+  uint32_t now = lv_tick_get();
+  float dt = lv_tick_diff(now, last) / 1000.0f;
+  last = now;
+  flows_step(std::min(dt, 0.1f));
+}
+
+inline void make_dot_layer() {
+  dot_layer = lv_obj_create(ui.scene);
+  lv_obj_remove_style_all(dot_layer);
+  lv_obj_set_pos(dot_layer, 0, 0);
+  lv_obj_set_size(dot_layer, SCENE_W, SCENE_H);
+  lv_obj_remove_flag(dot_layer, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_remove_flag(dot_layer, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_event_cb(dot_layer, dot_draw_cb, LV_EVENT_DRAW_MAIN, nullptr);
+  // ~60 Bilder pro Sekunde, im LVGL-Takt statt im ESPHome-Intervall
+  lv_timer_create(flow_timer_cb, 16, nullptr);
 }
 
 inline lv_obj_t *wallbox_led = nullptr, *charge_led = nullptr;
@@ -1359,6 +1416,7 @@ inline void build() {
   make_flow("car", {{94, 452}, {94, 462}, {86, 466}, {4, 466}, {-1, 474}, {0, 490}, {3, 499}}, GREEN);
   make_flow("wire1", path("M616 338 Q656 348 706 342"), PINK);
   make_flow("wire2", path("M640 338 Q680 348 730 342"), PINK);
+  make_dot_layer();
   // Funken an den Isolatoren
   for (float x : {616.0f, 640.0f}) {
     lv_obj_t *s = box(sc, X(x) - 4, Y(334) - 4, 8, 8, 0xFFF1A8, LV_OPA_COVER, LV_RADIUS_CIRCLE);
@@ -1402,13 +1460,12 @@ inline void ensure_heat(int ri) {
   }
 }
 
-// Takt (40 ms): Fluss, Funken an den Isolatoren, verzögerte Neuaufbauten
+// Takt (40 ms): Funken an den Isolatoren (der Fluss hat einen eigenen LVGL-Timer)
 inline void tick() {
   static uint32_t last = lv_tick_get(), spark_t = 0;
   uint32_t now = lv_tick_get();
   float dt = lv_tick_diff(now, last) / 1000.0f;
   last = now;
-  flows_step(std::min(dt, 0.1f));
   // Isolatoren funken ab und zu kurz (nur wenn Strom fließt)
   spark_t += (uint32_t) (dt * 1000);
   if (std::fabs(energy.grid) > 30 && spark_t > 3400) {
