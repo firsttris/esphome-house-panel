@@ -14,7 +14,7 @@ esphome:
             const struct { const char *r; float t, h; } temps[] = {
                 {"mila", 22.0, 48}, {"schlaf", 21.2, 52}, {"malo", 20.4, 50}, {"bad_og", 22.8, 63}, {"flur_og", 20.1, 51},
                 {"anbau", 19.6, 49}, {"wohnen", 20.8, 58}, {"essen", 20.6, 56}, {"kueche", 21.4, 55}, {"flur_eg", 19.8, 54},
-                {"bad_eg", 22.1, 60}, {"eingang", 18.9, 55}, {"garage", 12.4, 70}, {"wasch", 17.9, 61}, {"heiz", 23.4, 45},
+                {"bad_eg", 22.1, 60}, {"eingang", 18.9, 55}, {"garage", 12.4, 70}, {"wasch", 17.9, 61},
                 {"bad_k", 19.5, 58}, {"buero", 19.2, 52}, {"buero2", 18.6, 53}};
             for (auto &t : temps) {
               house::room_temp(t.r, t.t);

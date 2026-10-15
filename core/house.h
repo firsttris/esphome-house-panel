@@ -71,6 +71,10 @@ struct RoomDef {
   std::vector<WinDef> wins;
 };
 
+// Technikraum (Heizung): ohne Temperatur, Heizung und Raumansicht
+inline bool technik(const RoomDef &d) { return strcmp(d.id, "heiz") == 0; }
+constexpr uint32_t TECH_ROOM = 0x2A2F3B;
+
 inline const std::vector<RoomDef> &rooms_def() {
   static const std::vector<RoomDef> R = {
       {"mila", "Mila", "Dachgeschoss", 180, 82, 408, 93, ROOFROOM, NONE, false,
@@ -409,7 +413,7 @@ inline void render_canvas() {
   auto &R = rooms_def();
   for (size_t i = 0; i < R.size(); i++) {
     auto &d = R[i];
-    uint32_t col = tint(rooms[i].temp);
+    uint32_t col = technik(d) ? TECH_ROOM : tint(rooms[i].temp);
     if (d.shape == ROOFROOM)
       c_tri(l, 180, 175, 384, 82, 588, 175, col);
     else
@@ -442,7 +446,7 @@ inline void render_canvas() {
   }
 
   // Technik im Heizungsraum (Kreise; Symbole als Labels darüber)
-  const float tech[][3] = {{196, 435, (float) GREEN}, {228, 408, (float) TEXT}, {260, 435, 0xFF7A45}};
+  const float tech[][3] = {{200, 450, (float) GREEN}, {230, 418, (float) TEXT}, {262, 450, 0xFF7A45}};
   for (auto &t : tech) {
     c_circle(l, t[0], t[1], 13, (uint32_t) t[2]);
     c_circle(l, t[0], t[1], 11.5f, 0x0E1422);
@@ -1408,7 +1412,7 @@ inline void build() {
   lv_obj_set_scroll_dir(ui.side, LV_DIR_VER);
   // Technik-Symbole im Heizungsraum
   const struct { const char *icon; float x, y; uint32_t col; } tech[] = {
-      {"\U000F12A3", 196, 435, GREEN}, {"\U000F1903", 228, 408, TEXT}, {"\U000F0F92", 260, 435, 0xFF7A45}};
+      {"\U000F12A3", 200, 450, GREEN}, {"\U000F1903", 230, 418, TEXT}, {"\U000F0F92", 262, 450, 0xFF7A45}};
   for (auto &t : tech) {
     lv_obj_t *l = text(sc, t.icon, ui.i16, t.col);
     lv_obj_update_layout(l);
@@ -1442,6 +1446,7 @@ inline void build() {
       lv_obj_set_pos(r.name, X(d.x + 6), Y(d.y + 5));
       lv_obj_set_pos(r.temp_l, X(d.x + 6), Y(d.y + 18));
     }
+    set_hidden(r.temp_l, technik(d));
     r.chip_i = text(sc, "\U000F0438", ui.i11, HEAT);
     r.chip_v = text(sc, "", ui.f11b, HEAT);
     set_hidden(r.chip_i, true);
@@ -1451,18 +1456,20 @@ inline void build() {
     lv_obj_set_style_border_color(r.hit, C(TEXT), 0);
     lv_obj_set_style_border_width(r.hit, 2, 0);
     lv_obj_set_style_border_opa(r.hit, LV_OPA_TRANSP, 0);
+    if (technik(d))
+      continue;
     lv_obj_add_flag(r.hit, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(r.hit, [](lv_event_t *e) { open_room((int) (intptr_t) lv_event_get_user_data(e)); }, LV_EVENT_CLICKED,
                         (void *) (intptr_t) i);
   }
 
   // Energiefluss (Mockup-Koordinaten)
-  make_flow("pv", {{232, 132}, {232, 176}, {314, 176}, {314, 383}, {228, 383}, {228, 395}}, AMBER);
-  make_flow("hoy", {{112, 162}, {150, 193}, {150, 386}, {216, 386}, {216, 400}}, 0xFFD27A);
-  make_flow("battery", {{216, 408}, {196, 408}, {196, 422}}, GREEN);
-  make_flow("heater", {{240, 413}, {260, 413}, {260, 422}}, 0xFF7A45);
-  make_flow("grid", {{628, 340}, {628, 556}, {196, 556}, {196, 470}, {216, 470}, {216, 421}}, PINK);
-  make_flow("wallbox", {{216, 420}, {216, 462}, {94, 462}, {94, 452}}, GREEN);
+  make_flow("pv", {{232, 132}, {232, 176}, {314, 176}, {314, 398}, {230, 398}, {230, 405}}, AMBER);
+  make_flow("hoy", {{112, 162}, {150, 193}, {150, 418}, {217, 418}}, 0xFFD27A);
+  make_flow("battery", {{220, 428}, {200, 428}, {200, 437}}, GREEN);
+  make_flow("heater", {{240, 428}, {262, 428}, {262, 437}}, 0xFF7A45);
+  make_flow("grid", {{628, 340}, {628, 556}, {231, 556}, {231, 431}}, PINK);
+  make_flow("wallbox", {{226, 431}, {226, 464}, {94, 464}, {94, 452}}, GREEN);
   make_flow("car", {{94, 452}, {94, 462}, {86, 466}, {4, 466}, {-1, 474}, {0, 490}, {3, 499}}, GREEN);
   make_flow("wire1", path("M616 338 Q656 348 706 342"), PINK);
   make_flow("wire2", path("M640 338 Q680 348 730 342"), PINK);
