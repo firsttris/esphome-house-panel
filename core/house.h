@@ -130,6 +130,8 @@ struct RoomState {
   // Objekte
   lv_obj_t *hit = nullptr, *name = nullptr, *temp_l = nullptr, *chip_i = nullptr, *chip_v = nullptr;
   lv_obj_t *heat_glow = nullptr, *heat_line = nullptr, *alarm = nullptr;
+  lv_obj_t *layer = nullptr;  // Behälter für alle Objekte des Raums
+  int32_t gx = 0, gy = 0;     // seine Lage in der Szene
   std::vector<lv_obj_t *> sparks;
   std::vector<Pane *> panes;
 };
@@ -699,7 +701,7 @@ inline void paint_heat(int ri) {
   if (on) {
     int32_t hh = lroundf(D(d.h) * (0.22f + 0.4f * k));
     int32_t bottom = d.shape == ROOFROOM ? Y(172) : Y(d.y + d.h - 2);
-    lv_obj_set_y(r.heat_glow, bottom - hh);
+    lv_obj_set_y(r.heat_glow, bottom - hh - r.gy);
     lv_obj_set_height(r.heat_glow, hh);
     lv_obj_set_style_bg_grad_opa(r.heat_glow, lroundf(255 * (0.18f + 0.3f * k)), 0);
     lv_obj_set_style_bg_color(r.heat_line, C(heat_color(45 + 35 * k)), 0);
@@ -737,6 +739,60 @@ inline void paint_heat(int ri) {
     lv_obj_align_to(r.chip_i, r.temp_l, LV_ALIGN_OUT_RIGHT_MID, 4, 0);
     lv_obj_align_to(r.chip_v, r.chip_i, LV_ALIGN_OUT_RIGHT_MID, 2, 0);
   }
+}
+
+// Raum-Behälter: Beim Neuzeichnen prüft LVGL zuerst den Behälter und nur bei
+// Überschneidung die Objekte darin – statt hunderte Einzelobjekte pro Ausschnitt.
+// Verschiebt alle Szene-Objekte ab Index `from` in den Behälter des Raums.
+inline void adopt(RoomState &r, uint32_t from) {
+  std::vector<lv_obj_t *> objs;
+  for (uint32_t k = from; k < lv_obj_get_child_count(ui.scene); k++) {
+    lv_obj_t *o = lv_obj_get_child(ui.scene, (int32_t) k);
+    if (o != r.layer)
+      objs.push_back(o);
+  }
+  for (lv_obj_t *o : objs) {
+    int32_t x = lv_obj_get_style_x(o, LV_PART_MAIN), y = lv_obj_get_style_y(o, LV_PART_MAIN);
+    lv_obj_set_parent(o, r.layer);
+    lv_obj_set_pos(o, x - r.gx, y - r.gy);
+  }
+}
+
+// Legt den Behälter um alle Objekte ab Index `from` (inkl. Schatten) und den Raum selbst
+inline void make_room_layer(int ri, uint32_t from) {
+  auto &d = rooms_def()[ri];
+  auto &r = rooms[ri];
+  lv_obj_t *sc = ui.scene;
+  lv_obj_update_layout(sc);
+  lv_area_t sa;
+  lv_obj_get_coords(sc, &sa);
+  // Raum mit Rand (später angelegte Heizungs-Objekte liegen darin)
+  int32_t x1, y1, x2, y2;
+  if (d.shape == ROOFROOM) {
+    x1 = X(180); y1 = Y(82); x2 = X(588); y2 = Y(175);
+  } else {
+    x1 = X(d.x); y1 = Y(d.y); x2 = X(d.x + d.w); y2 = Y(d.y + d.h);
+  }
+  x1 -= 12; y1 -= 12; x2 += 12; y2 += 12;
+  for (uint32_t k = from; k < lv_obj_get_child_count(sc); k++) {
+    lv_obj_t *o = lv_obj_get_child(sc, (int32_t) k);
+    lv_area_t c;
+    lv_obj_get_coords(o, &c);
+    int32_t e = lv_obj_calculate_ext_draw_size(o, LV_PART_MAIN) + 8;  // + Reserve für gedrehte Dachfenster
+    x1 = std::min(x1, c.x1 - sa.x1 - e);
+    y1 = std::min(y1, c.y1 - sa.y1 - e);
+    x2 = std::max(x2, c.x2 - sa.x1 + e);
+    y2 = std::max(y2, c.y2 - sa.y1 + e);
+  }
+  r.layer = lv_obj_create(sc);
+  lv_obj_remove_style_all(r.layer);
+  lv_obj_set_pos(r.layer, x1, y1);
+  lv_obj_set_size(r.layer, x2 - x1 + 1, y2 - y1 + 1);
+  lv_obj_remove_flag(r.layer, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_remove_flag(r.layer, LV_OBJ_FLAG_SCROLLABLE);
+  r.gx = x1;
+  r.gy = y1;
+  adopt(r, from);
 }
 
 inline void build_heat(int ri) {
@@ -881,6 +937,10 @@ inline void dot_draw_cb(lv_event_t *e) {
     d.bg_color = C(f.color);
     for (auto &p : f.dots) {
       lv_area_t r = {a.x1 + p.x - DOT_R, a.y1 + p.y - DOT_R, a.x1 + p.x + DOT_R - 1, a.y1 + p.y + DOT_R - 1};
+      // nur Punkte zeichnen, die im gerade neu gezeichneten Ausschnitt liegen
+      const lv_area_t &c = layer->_clip_area;
+      if (r.x2 < c.x1 || r.x1 > c.x2 || r.y2 < c.y1 || r.y1 > c.y2)
+        continue;
       lv_draw_rect(layer, &d, &r);
     }
   }
@@ -1484,6 +1544,7 @@ inline void build() {
   for (size_t i = 0; i < R.size(); i++) {
     auto &d = R[i];
     auto &r = rooms[i];
+    uint32_t from = lv_obj_get_child_count(sc);
     build_windows(i);
     bool roofroom = d.shape == ROOFROOM;
     int32_t hx = roofroom ? X(300) : X(d.x + 1), hy = roofroom ? Y(128) : Y(d.y + 1);
@@ -1512,6 +1573,7 @@ inline void build() {
     lv_obj_set_style_border_color(r.hit, C(TEXT), 0);
     lv_obj_set_style_border_width(r.hit, 2, 0);
     lv_obj_set_style_border_opa(r.hit, LV_OPA_TRANSP, 0);
+    make_room_layer(i, from);
     if (technik(d))
       continue;
     lv_obj_add_flag(r.hit, LV_OBJ_FLAG_CLICKABLE);
@@ -1564,7 +1626,9 @@ inline void build() {
 // Heizkreise legen ihre Objekte beim ersten Wert an
 inline void ensure_heat(int ri) {
   if (rooms[ri].heat_line == nullptr && !rooms[ri].circuits.empty()) {
+    uint32_t from = lv_obj_get_child_count(ui.scene);
     build_heat(ri);
+    adopt(rooms[ri], from);
     // Beschriftung über die Glut legen
     lv_obj_move_foreground(rooms[ri].name);
     lv_obj_move_foreground(rooms[ri].temp_l);
