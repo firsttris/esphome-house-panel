@@ -1574,9 +1574,15 @@ inline void build() {
     lv_obj_set_style_border_width(r.hit, 2, 0);
     lv_obj_set_style_border_opa(r.hit, LV_OPA_TRANSP, 0);
     make_room_layer(i, from);
-    if (technik(d))
-      continue;
     lv_obj_add_flag(r.hit, LV_OBJ_FLAG_CLICKABLE);
+    // Heizungsraum (Energiezentrale): Tippen zeigt die Übersicht mit der Energie
+    if (technik(d)) {
+      lv_obj_add_event_cb(r.hit, [](lv_event_t *) {
+        if (selected >= 0)
+          open_room(-1);
+      }, LV_EVENT_CLICKED, nullptr);
+      continue;
+    }
     lv_obj_add_event_cb(r.hit, [](lv_event_t *e) { open_room((int) (intptr_t) lv_event_get_user_data(e)); }, LV_EVENT_CLICKED,
                         (void *) (intptr_t) i);
   }
