@@ -25,7 +25,7 @@ ready() {
   echo "Vorschau zeichnet nichts" >&2
   exit 1
 }
-"$BIN" >/dev/null 2>&1 &
+stdbuf -oL -eL "$BIN" >"$OUT/app.log" 2>&1 &
 APP=$!
 trap 'kill $APP $XVFB 2>/dev/null || true' EXIT
 ready
@@ -37,6 +37,18 @@ sleep 1.2
 shot raum
 tap 692 92    # Zurück zur Übersicht
 sleep 0.8
+
+# Leistung: 15 s Ruhe in der Übersicht. Die App schreibt jede Sekunde
+# "fps · ms pro Bild (davon Kopieren) · Anteil des Bildschirms, der neu gezeichnet wird".
+# Der Anteil hängt nicht vom Rechner ab und taugt zum Vergleich zweier Stände.
+sleep 3
+FROM=$(($(wc -l <"$OUT/app.log") + 1))
+sleep 15
+tail -n +"$FROM" "$OUT/app.log" | sed 's/\x1b\[[0-9;]*m//g' \
+  | sed -nE 's/.* ([0-9]+) fps · ([0-9.]+) ms \(Kopie ([0-9.]+)\) · ([0-9]+) %.*/\1 \2 \3 \4/p' \
+  | awk '{ f += $1; m += $2; k += $3; a += $4; n++ }
+         END { if (n) printf "Leistung (Mittel über %d s): %.1f fps · %.1f ms pro Bild (Kopie %.1f) · %.1f %% neu gezeichnet\n", n, f/n, m/n, k/n, a/n;
+               else print "Leistung: keine Messwerte" }' | tee "$OUT/perf.txt"
 
 # Optional (GIF=1): kurzer Rundgang als animiertes GIF für das README.
 # Rundgang: Haus, Wohnzimmer öffnen, Licht schalten, zurück.

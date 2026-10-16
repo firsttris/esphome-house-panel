@@ -44,7 +44,7 @@ All screenshots are rendered from the firmware in CI on every change, with sampl
 - **Rooms coloured by temperature**, from cool blue to warm, with name, temperature and heating valve opening
 - **Windows that live:** they glow warm when the light is on, the roller shutter sits at its real position, and an open window swings its sash inwards with a pulsing dot. All three at the same time.
 - **Floor heating:** thin heat waves rising from the floor, like the heating icon; faster and more of them the wider the valves are open
-- **Energy flow:** dots run from the solar modules to the inverter, battery, heating rod, the car at the wallbox and, via the pole and the overhead line, to or from the grid. Faster with more power, pink when buying, blue when selling.
+- **Energy flow:** glowing comets with a short tail run from the solar modules to the inverter, battery, heating rod, the car at the wallbox and, via the pole and the overhead line, to or from the grid. Lines with current light up; faster with more power, pink when buying, blue when selling.
 - **Day and night** from the sun's position: sun or moon and stars, dark windows at night
 - **Smoke alarm:** the room pulses red and a warning appears
 - Tap a room to open it on the right

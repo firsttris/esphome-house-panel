@@ -817,50 +817,117 @@ inline void build_heat(int ri) {
 }
 
 // ---------------------------------------------------------------------------
-// Energiefluss: Punkte laufen entlang von Linien
+// Energiefluss: Kometen laufen entlang von Linien
 //
-// Alle Punkte zeichnet eine einzige durchsichtige Ebene selbst (kein Objekt je
-// Punkt). Ein LVGL-Timer bewegt sie im Bildschirmtakt; neu gezeichnet werden
-// nur die kleinen Flächen um die Punkte.
+// Wie im Energie-Dashboard: ein Kopf mit weichem Schein und ein kleiner Schweif.
+// Den Schein rechnet der Start einmal je Farbe als Bild vor; LVGL kopiert ihn
+// beim Zeichnen nur. Alle Kometen zeichnet eine einzige durchsichtige Ebene
+// selbst (kein Objekt je Komet). Ein LVGL-Timer bewegt sie im Bildschirmtakt;
+// neu gezeichnet wird je Komet nur ein kleines Rechteck um Kopf und Schweif.
 // ---------------------------------------------------------------------------
-constexpr int32_t DOT_R = 3;
+constexpr int32_t GLOW_R = 6;    // Halbmesser des Scheins (Bild 13 × 13 px)
+constexpr float TAIL_GAP = 7;    // Schweif so weit hinter dem Kopf
+
+struct Comet {
+  lv_point_t head{}, tail{};
+  bool has_tail = false;
+};
 
 struct Flow {
   std::vector<lv_point_precise_t> pts;
-  lv_obj_t *line = nullptr;
-  std::vector<lv_point_t> dots;  // aktuelle Position je Punkt (Szene-Koordinaten)
+  lv_obj_t *line = nullptr, *glow = nullptr;
+  std::vector<Comet> dots;  // aktuelle Position je Komet (Szene-Koordinaten)
   float len = 0, pos = 0, speed = 0;
   int dir = 1;
   uint32_t color;
+  lv_draw_buf_t *sprite = nullptr;
 };
 inline std::map<std::string, Flow> flows;
 inline lv_obj_t *dot_layer = nullptr;
 
+// Kometenkopf: heller, zur Mitte weißlicher Kern mit weichem Schein (einmal je Farbe)
+inline lv_draw_buf_t *glow_sprite(uint32_t color) {
+  static std::map<uint32_t, lv_draw_buf_t *> cache;
+  auto it = cache.find(color);
+  if (it != cache.end())
+    return it->second;
+  const int n = 2 * GLOW_R + 1;
+  lv_draw_buf_t *b = lv_draw_buf_create(n, n, LV_COLOR_FORMAT_ARGB8888, 0);
+  const float core = 2.0f;
+  uint8_t cr = color >> 16, cg = (color >> 8) & 0xFF, cb = color & 0xFF;
+  for (int y = 0; y < n; y++) {
+    uint8_t *row = b->data + y * b->header.stride;
+    for (int x = 0; x < n; x++) {
+      float d = hypotf(x - GLOW_R, y - GLOW_R);
+      float a = std::max(std::clamp(core + 0.5f - d, 0.0f, 1.0f), 0.45f * expf(-(d - core) * (d - core) / 7.0f));
+      float w = std::max(0.0f, 1 - d / (core + 1)) * 0.55f;  // Kern zur Mitte hin weißlich
+      row[4 * x + 0] = (uint8_t) (cb + (255 - cb) * w);
+      row[4 * x + 1] = (uint8_t) (cg + (255 - cg) * w);
+      row[4 * x + 2] = (uint8_t) (cr + (255 - cr) * w);
+      row[4 * x + 3] = (uint8_t) lroundf(255 * std::min(a, 1.0f));
+    }
+  }
+  cache[color] = b;
+  return b;
+}
+
 inline void make_flow(const char *key, std::vector<Pt> pts, uint32_t color) {
   Flow &f = flows[key];
   f.color = color;
+  f.sprite = glow_sprite(color);
   for (auto &p : pts)
     f.pts.push_back({X(p.x), Y(p.y)});
   for (size_t i = 1; i < f.pts.size(); i++)
     f.len += hypotf(f.pts[i].x - f.pts[i - 1].x, f.pts[i].y - f.pts[i - 1].y);
+  // Schein unter der Leitung, nur sichtbar, solange Strom fließt
+  f.glow = lv_line_create(ui.scene);
+  lv_line_set_points(f.glow, f.pts.data(), f.pts.size());
+  lv_obj_set_style_line_color(f.glow, C(color), 0);
+  lv_obj_set_style_line_width(f.glow, 6, 0);
+  lv_obj_set_style_line_opa(f.glow, 22, 0);
+  lv_obj_set_style_line_rounded(f.glow, true, 0);
+  set_hidden(f.glow, true);
   f.line = lv_line_create(ui.scene);
   lv_line_set_points(f.line, f.pts.data(), f.pts.size());
   lv_obj_set_style_line_color(f.line, C(color), 0);
   lv_obj_set_style_line_width(f.line, 2, 0);
   lv_obj_set_style_line_opa(f.line, 50, 0);
-  // ein Punkt je ~85 px, kurze Leitungen haben einen
+  // ein Komet je ~85 px, kurze Leitungen haben einen
   f.dots.resize(std::max(1, (int) lroundf(f.len / 85)));
 }
 
-// Fläche um einen Punkt (Bildschirm-Koordinaten) als ungültig markieren
-inline void invalidate_dot(const lv_point_t &p, const lv_point_t &q) {
+// Punkt auf der Leitung nach Strecke d ab Anfang
+inline lv_point_t flow_point(const Flow &f, float d) {
+  for (size_t k = 1; k < f.pts.size(); k++) {
+    float seg = hypotf(f.pts[k].x - f.pts[k - 1].x, f.pts[k].y - f.pts[k - 1].y);
+    if (d <= seg || k == f.pts.size() - 1) {
+      float t = seg > 0 ? std::clamp(d / seg, 0.0f, 1.0f) : 0;
+      return {(int32_t) lroundf(f.pts[k - 1].x + (f.pts[k].x - f.pts[k - 1].x) * t),
+              (int32_t) lroundf(f.pts[k - 1].y + (f.pts[k].y - f.pts[k - 1].y) * t)};
+    }
+    d -= seg;
+  }
+  return {(int32_t) f.pts[0].x, (int32_t) f.pts[0].y};
+}
+
+// Ein Rechteck um Kopf und Schweif (alt und neu) als ungültig markieren: LVGL merkt
+// sich nur 32 Flächen pro Bild, darüber zeichnet es den ganzen Bildschirm neu
+inline void invalidate_comet(const Comet &o, const Comet &n) {
+  int32_t x1 = std::min(o.head.x, n.head.x), y1 = std::min(o.head.y, n.head.y);
+  int32_t x2 = std::max(o.head.x, n.head.x), y2 = std::max(o.head.y, n.head.y);
+  for (const Comet *c : {&o, &n})
+    if (c->has_tail) {
+      x1 = std::min(x1, c->tail.x);
+      y1 = std::min(y1, c->tail.y);
+      x2 = std::max(x2, c->tail.x);
+      y2 = std::max(y2, c->tail.y);
+    }
   lv_area_t a;
   lv_obj_get_coords(dot_layer, &a);
-  lv_area_t d = {a.x1 + std::min(p.x, q.x) - DOT_R - 1, a.y1 + std::min(p.y, q.y) - DOT_R - 1,
-                 a.x1 + std::max(p.x, q.x) + DOT_R + 1, a.y1 + std::max(p.y, q.y) + DOT_R + 1};
+  lv_area_t d = {a.x1 + x1 - GLOW_R - 1, a.y1 + y1 - GLOW_R - 1, a.x1 + x2 + GLOW_R + 1, a.y1 + y2 + GLOW_R + 1};
   lv_obj_invalidate_area(dot_layer, &d);
 }
-inline void invalidate_dot(const lv_point_t &p) { invalidate_dot(p, p); }
+inline void invalidate_comet(const Comet &c) { invalidate_comet(c, c); }
 
 inline void flow_set(const char *key, float watts, int dir = 1, uint32_t color = 0) {
   auto it = flows.find(key);
@@ -874,14 +941,18 @@ inline void flow_set(const char *key, float watts, int dir = 1, uint32_t color =
   bool recolor = color && color != f.color;
   if (recolor) {
     f.color = color;
+    f.sprite = glow_sprite(color);
     lv_obj_set_style_line_color(f.line, C(color), 0);
+    lv_obj_set_style_line_color(f.glow, C(color), 0);
   }
-  if (was_on != on)
-    lv_obj_set_style_line_opa(f.line, on ? 56 : 15, 0);
-  // Nur die Flächen der Punkte neu zeichnen, wenn der Fluss an/aus geht oder die Farbe wechselt
+  if (was_on != on) {
+    lv_obj_set_style_line_opa(f.line, on ? 80 : 15, 0);
+    set_hidden(f.glow, !on);
+  }
+  // Nur die Flächen der Kometen neu zeichnen, wenn der Fluss an/aus geht oder die Farbe wechselt
   if (dot_layer && (was_on != on || recolor))
-    for (auto &p : f.dots)
-      invalidate_dot(p);
+    for (auto &c : f.dots)
+      invalidate_comet(c);
 }
 
 inline void flows_step(float dt) {
@@ -894,22 +965,17 @@ inline void flows_step(float dt) {
     f.pos = fmodf(f.pos + f.dir * v * dt + f.len, f.len);
     for (size_t i = 0; i < f.dots.size(); i++) {
       float d = fmodf(f.pos + i * f.len / f.dots.size(), f.len);
-      lv_point_t np = f.dots[i];
-      for (size_t k = 1; k < f.pts.size(); k++) {
-        float seg = hypotf(f.pts[k].x - f.pts[k - 1].x, f.pts[k].y - f.pts[k - 1].y);
-        if (d <= seg || k == f.pts.size() - 1) {
-          float t = seg > 0 ? std::min(1.0f, d / seg) : 0;
-          np = {(int32_t) lroundf(f.pts[k - 1].x + (f.pts[k].x - f.pts[k - 1].x) * t),
-                (int32_t) lroundf(f.pts[k - 1].y + (f.pts[k].y - f.pts[k - 1].y) * t)};
-          break;
-        }
-        d -= seg;
-      }
-      if (np.x != f.dots[i].x || np.y != f.dots[i].y) {
-        // alte und neue Position als eine Fläche: LVGL merkt sich nur 32 Flächen pro Bild,
-        // darüber zeichnet es den ganzen Bildschirm neu
-        invalidate_dot(f.dots[i], np);
-        f.dots[i] = np;
+      Comet n;
+      n.head = flow_point(f, d);
+      // Schweif hinter dem Kopf; gerade am Anfang der Leitung neu gestartet: noch keiner
+      float t = d - f.dir * TAIL_GAP;
+      n.has_tail = t >= 0 && t <= f.len;
+      if (n.has_tail)
+        n.tail = flow_point(f, t);
+      Comet &o = f.dots[i];
+      if (n.head.x != o.head.x || n.head.y != o.head.y || n.has_tail != o.has_tail) {
+        invalidate_comet(o, n);
+        o = n;
       }
     }
   }
@@ -919,22 +985,30 @@ inline void dot_draw_cb(lv_event_t *e) {
   lv_layer_t *layer = lv_event_get_layer(e);
   lv_area_t a;
   lv_obj_get_coords(dot_layer, &a);
-  lv_draw_rect_dsc_t d;
-  lv_draw_rect_dsc_init(&d);
-  d.radius = LV_RADIUS_CIRCLE;
-  d.bg_opa = LV_OPA_COVER;
+  const lv_area_t &clip = layer->_clip_area;
+  auto outside = [&](const lv_area_t &r) { return r.x2 < clip.x1 || r.x1 > clip.x2 || r.y2 < clip.y1 || r.y1 > clip.y2; };
+  lv_draw_rect_dsc_t t;
+  lv_draw_rect_dsc_init(&t);
+  t.radius = LV_RADIUS_CIRCLE;
+  t.bg_opa = 140;
+  lv_draw_image_dsc_t h;
+  lv_draw_image_dsc_init(&h);
   for (auto &kv : flows) {
     Flow &f = kv.second;
     if (f.speed == 0)
       continue;
-    d.bg_color = C(f.color);
-    for (auto &p : f.dots) {
-      lv_area_t r = {a.x1 + p.x - DOT_R, a.y1 + p.y - DOT_R, a.x1 + p.x + DOT_R - 1, a.y1 + p.y + DOT_R - 1};
-      // nur Punkte zeichnen, die im gerade neu gezeichneten Ausschnitt liegen
-      const lv_area_t &c = layer->_clip_area;
-      if (r.x2 < c.x1 || r.x1 > c.x2 || r.y2 < c.y1 || r.y1 > c.y2)
-        continue;
-      lv_draw_rect(layer, &d, &r);
+    t.bg_color = C(f.color);
+    h.src = f.sprite;
+    for (auto &c : f.dots) {
+      // nur Kometen zeichnen, die im gerade neu gezeichneten Ausschnitt liegen
+      if (c.has_tail) {
+        lv_area_t r = {a.x1 + c.tail.x - 1, a.y1 + c.tail.y - 1, a.x1 + c.tail.x + 1, a.y1 + c.tail.y + 1};
+        if (!outside(r))
+          lv_draw_rect(layer, &t, &r);
+      }
+      lv_area_t r = {a.x1 + c.head.x - GLOW_R, a.y1 + c.head.y - GLOW_R, a.x1 + c.head.x + GLOW_R, a.y1 + c.head.y + GLOW_R};
+      if (!outside(r))
+        lv_draw_image(layer, &h, &r);
     }
   }
 }
