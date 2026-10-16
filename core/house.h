@@ -1655,8 +1655,12 @@ inline void build() {
   }
 
   // Energiefluss (Mockup-Koordinaten)
-  make_flow("pv", {{232, 132}, {232, 176}, {314, 176}, {314, 398}, {230, 398}, {230, 405}}, AMBER);
-  make_flow("hoy", {{112, 162}, {150, 193}, {150, 418}, {217, 418}}, 0xFFD27A);
+  // Leitungen wie echte Installationen: an Decken und in Wänden, nie quer durch einen Raum.
+  // Deye: am Dachrand ins Haus, unter der Decke des Obergeschosses, in der Wand zwischen
+  // Bad und Schlafzimmer/Küche hinab, unter der Kellerdecke zur Zentrale, dann senkrecht hinein.
+  make_flow("pv", {{176, 164}, {176, 176}, {314, 176}, {314, 375}, {234, 375}, {234, 407}}, AMBER);
+  // Hoymiles: vom Anbaudach unter die Anbaudecke, in der Wand zum Flur hinab, unter der Kellerdecke zur Zentrale
+  make_flow("hoy", {{112, 162}, {112, 185}, {174, 185}, {174, 375}, {226, 375}, {226, 407}}, 0xFFD27A);
   make_flow("battery", {{220, 428}, {200, 428}, {200, 437}}, GREEN);
   make_flow("heater", {{240, 428}, {262, 428}, {262, 437}}, 0xFF7A45);
   make_flow("grid", {{628, 340}, {628, 556}, {231, 556}, {231, 431}}, PINK);
