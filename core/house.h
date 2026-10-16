@@ -540,10 +540,10 @@ inline void h_cb(void *v, int32_t x) { lv_obj_set_height((lv_obj_t *) v, x); }
 inline void rot_cb(void *v, int32_t x) { lv_obj_set_style_transform_rotation((lv_obj_t *) v, x, 0); }
 inline void ty_cb(void *v, int32_t x) {
   lv_obj_set_style_translate_y((lv_obj_t *) v, -x, 0);
-  // Funken: oben verglühen
+  // Funken: schnell aufleuchten, bis zur Hälfte voll hell, dann oben verglühen
   int32_t span = (int32_t) (intptr_t) lv_obj_get_user_data((lv_obj_t *) v);
-  int32_t o = span > 0 ? (x < span / 6 ? x * 255 * 6 / span : 255 - (x - span / 6) * 255 / std::max<int32_t>(1, span * 5 / 6)) : 0;
-  lv_obj_set_style_opa((lv_obj_t *) v, LV_CLAMP(0, o, 230), 0);
+  int32_t o = span <= 0 ? 0 : x < span / 8 ? x * 255 * 8 / span : x < span / 2 ? 255 : 255 - (x - span / 2) * 255 / std::max<int32_t>(1, span / 2);
+  lv_obj_set_style_opa((lv_obj_t *) v, LV_CLAMP(0, o, 255), 0);
 }
 
 inline void anim(void *var, lv_anim_exec_xcb_t cb, int32_t a, int32_t b, uint32_t ms, lv_anim_path_cb_t path = lv_anim_path_ease_out,
@@ -697,7 +697,7 @@ inline void paint_heat(int ri) {
   float k = avg_open(r) / 100.0f;
   bool on = k > 0.005f;
   // Funken: Anzahl nach Breite und Öffnung
-  size_t want = on ? (size_t) std::max(1L, lroundf(D(d.w) / 56.0f * (0.4f + k))) : 0;
+  size_t want = on ? (size_t) std::max(1L, lroundf(D(d.w) / 30.0f * (0.4f + k))) : 0;
   for (size_t i = 0; i < r.sparks.size(); i++) {
     lv_obj_t *s = r.sparks[i];
     bool use = i < want;
@@ -789,10 +789,16 @@ inline void build_heat(int ri) {
   float x0 = roofroom ? 186 : d.x + 4, x1 = roofroom ? 582 : d.x + d.w - 4;
   int32_t fy = roofroom ? Y(172) : Y(d.y + d.h - 4);
   // Aufsteigende Funken (werden je nach Bedarf benutzt)
-  int n = std::max(1, (int) lroundf(D(x1 - x0) / 56.0f * 1.4f));
+  // Lage nach dem goldenen Schnitt: auch die ersten wenigen verteilen sich über die ganze Breite
+  int n = std::max(1, (int) lroundf(D(x1 - x0) / 30.0f * 1.4f));
   for (int i = 0; i < n; i++) {
-    int32_t sx = X(x0) + (X(x1) - X(x0)) * (2 * i + 1) / (2 * n) + ((i * 37) % 13) - 6;
-    lv_obj_t *s = box(ui.scene, sx, fy - 4, 2, 2, 0xFFD9A0, LV_OPA_COVER, LV_RADIUS_CIRCLE);
+    float f = fmodf((i + 0.5f) * 0.618034f, 1.0f);
+    int32_t sx = X(x0) + lroundf((X(x1) - X(x0) - 4) * f);
+    lv_obj_t *s = box(ui.scene, sx, fy - 6, 4, 4, 0xFFC46A, LV_OPA_COVER, LV_RADIUS_CIRCLE);
+    // Lichthof als Umriss: günstiger zu zeichnen als ein Schatten
+    lv_obj_set_style_outline_width(s, 2, 0);
+    lv_obj_set_style_outline_color(s, C(0xFF8A3D), 0);
+    lv_obj_set_style_outline_opa(s, 110, 0);
     lv_obj_set_style_opa(s, 0, 0);
     set_hidden(s, true);
     r.sparks.push_back(s);
