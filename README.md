@@ -43,7 +43,7 @@ All screenshots are rendered from the firmware in CI on every change, with sampl
 **The house (left)**
 - **Rooms coloured by temperature**, from cool blue to warm, with name, temperature and heating valve opening
 - **Windows that live:** they glow warm when the light is on, the roller shutter sits at its real position, and an open window swings its sash inwards with a pulsing dot. All three at the same time.
-- **Floor heating:** a few sparks rising from the floor; faster and more of them the wider the valves are open
+- **Floor heating:** thin heat waves rising from the floor, like the heating icon; faster and more of them the wider the valves are open
 - **Energy flow:** dots run from the solar modules to the inverter, battery, heating rod, the car at the wallbox and, via the pole and the overhead line, to or from the grid. Faster with more power, pink when buying, blue when selling.
 - **Day and night** from the sun's position: sun or moon and stars, dark windows at night
 - **Smoke alarm:** the room pulses red and a warning appears
@@ -146,7 +146,7 @@ preview/            SDL preview, sample values, screenshot, GIF and social image
 | Flashing over USB fails | Hold **BOOT**, press **RST** briefly, release BOOT, then flash again |
 | Panel shows states but nothing switches | Tick **"Allow the device to perform Home Assistant actions"** in the ESPHome integration |
 | A room stays grey or shows "--°" | The climate entity of that room is missing or wrong in `house.yml` |
-| No rising sparks | The floor heating entities report 0, or the valve level is not 0–1/0–100 |
+| No rising heat waves | The floor heating entities report 0, or the valve level is not 0–1/0–100 |
 | Wallbox stays "bereit" | Set `wallbox_power` and `wallbox_energy_today` to your wallbox entities |
 
 ## 🔗 Related projects
