@@ -16,10 +16,19 @@ Xvfb :99 -screen 0 1024x600x24 >/dev/null 2>&1 &
 XVFB=$!
 export DISPLAY=:99
 sleep 1
+# Wartet, bis die App etwas gezeichnet hat (Bildschirm nicht mehr einfarbig), höchstens 60 s
+ready() {
+  for _ in $(seq 1 120); do
+    [ "$(import -window root -format '%k' info:)" -gt 1 ] && { sleep 2; return; }
+    sleep 0.5
+  done
+  echo "Vorschau zeichnet nichts" >&2
+  exit 1
+}
 "$BIN" >/dev/null 2>&1 &
 APP=$!
 trap 'kill $APP $XVFB 2>/dev/null || true' EXIT
-sleep 4
+ready
 tap() { xdotool mousemove "$1" "$2" mousedown 1 sleep 0.2 mouseup 1; }
 shot() { import -window root "$OUT/$1.png"; }
 shot haus
@@ -36,7 +45,7 @@ if [ -n "$GIF" ]; then
   sleep 0.5
   "$BIN" >/dev/null 2>&1 &
   APP=$!
-  sleep 3
+  ready
   ffmpeg -loglevel error -y -f x11grab -draw_mouse 0 -framerate 20 -video_size 1024x600 -i :99 -t 9 "$OUT/demo.mp4" &
   REC=$!
   sleep 1.5; tap 530 305   # Wohnzimmer öffnen

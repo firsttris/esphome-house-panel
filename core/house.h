@@ -5,7 +5,7 @@
 //    Solarmodule, Raumfarben (nach Temperatur), Garagen, Hof, Auto, Strommast.
 //    Neu gezeichnet wird nur, wenn sich Tag/Nacht oder eine Temperatur ändert.
 //  * Darüber liegen LVGL-Objekte für alles, was lebt: Fenster (Licht, Rollladen,
-//    offen), Heizung (Glutlinie, Funken), Energiefluss (Punkte), Beschriftungen.
+//    offen), Heizung (aufsteigende Wärmewellen), Energiefluss (Punkte), Beschriftungen.
 //  * Rechts eine Seitenleiste: Übersicht oder der angetippte Raum.
 //
 // Koordinaten unten sind die des Mockups (viewBox -24 0 692 640) und werden
@@ -129,10 +129,10 @@ struct RoomState {
   bool smoke = false;
   // Objekte
   lv_obj_t *hit = nullptr, *name = nullptr, *temp_l = nullptr, *chip_i = nullptr, *chip_v = nullptr;
-  lv_obj_t *heat_glow = nullptr, *heat_line = nullptr, *alarm = nullptr;
+  lv_obj_t *alarm = nullptr;
   lv_obj_t *layer = nullptr;  // Behälter für alle Objekte des Raums
   int32_t gx = 0, gy = 0;     // seine Lage in der Szene
-  std::vector<lv_obj_t *> sparks;
+  std::vector<lv_obj_t *> waves;  // aufsteigende Wärmewellen
   std::vector<Pane *> panes;
 };
 
@@ -540,10 +540,10 @@ inline void h_cb(void *v, int32_t x) { lv_obj_set_height((lv_obj_t *) v, x); }
 inline void rot_cb(void *v, int32_t x) { lv_obj_set_style_transform_rotation((lv_obj_t *) v, x, 0); }
 inline void ty_cb(void *v, int32_t x) {
   lv_obj_set_style_translate_y((lv_obj_t *) v, -x, 0);
-  // Funken: oben verglühen
+  // Wärmewellen: schnell sichtbar, oben verblassen
   int32_t span = (int32_t) (intptr_t) lv_obj_get_user_data((lv_obj_t *) v);
   int32_t o = span > 0 ? (x < span / 6 ? x * 255 * 6 / span : 255 - (x - span / 6) * 255 / std::max<int32_t>(1, span * 5 / 6)) : 0;
-  lv_obj_set_style_opa((lv_obj_t *) v, LV_CLAMP(0, o, 230), 0);
+  lv_obj_set_style_opa((lv_obj_t *) v, LV_CLAMP(0, o, 190), 0);
 }
 
 inline void anim(void *var, lv_anim_exec_xcb_t cb, int32_t a, int32_t b, uint32_t ms, lv_anim_path_cb_t path = lv_anim_path_ease_out,
@@ -692,35 +692,20 @@ inline uint32_t heat_color(float v) {
 inline void paint_heat(int ri) {
   auto &d = rooms_def()[ri];
   auto &r = rooms[ri];
-  if (r.heat_line == nullptr)
+  if (r.waves.empty())
     return;
   float k = avg_open(r) / 100.0f;
   bool on = k > 0.005f;
-  set_hidden(r.heat_line, !on);
-  set_hidden(r.heat_glow, !on);
-  if (on) {
-    int32_t hh = lroundf(D(d.h) * (0.22f + 0.4f * k));
-    int32_t bottom = d.shape == ROOFROOM ? Y(172) : Y(d.y + d.h - 2);
-    lv_obj_set_y(r.heat_glow, bottom - hh - r.gy);
-    lv_obj_set_height(r.heat_glow, hh);
-    lv_obj_set_style_bg_grad_opa(r.heat_glow, lroundf(255 * (0.18f + 0.3f * k)), 0);
-    lv_obj_set_style_bg_color(r.heat_line, C(heat_color(45 + 35 * k)), 0);
-    lv_obj_set_style_shadow_color(r.heat_line, C(heat_color(40 + 30 * k)), 0);
-    uint32_t dur = lroundf(4200 - 2200 * k);
-    anim(r.heat_line, opa_cb, 255, lroundf(255 * (0.45f + 0.15f * k)), dur / 2, lv_anim_path_ease_in_out, -1, dur / 2);
-  } else {
-    lv_anim_delete(r.heat_line, opa_cb);
-  }
-  // Funken: Anzahl nach Breite und Öffnung
-  size_t want = on ? (size_t) std::max(1L, lroundf(D(d.w) / 56.0f * (0.4f + k))) : 0;
-  for (size_t i = 0; i < r.sparks.size(); i++) {
-    lv_obj_t *s = r.sparks[i];
+  // Wärmewellen: Anzahl nach Breite und Öffnung
+  size_t want = on ? (size_t) std::max(1L, lroundf(D(d.w) / 44.0f * (0.4f + k))) : 0;
+  for (size_t i = 0; i < r.waves.size(); i++) {
+    lv_obj_t *s = r.waves[i];
     bool use = i < want;
     set_hidden(s, !use);
     if (use) {
       int32_t span = lroundf(D(d.h) * (0.3f + 0.35f * k));
       lv_obj_set_user_data(s, (void *) (intptr_t) span);
-      anim(s, ty_cb, 0, span, lroundf(5500 - 2000 * k), lv_anim_path_ease_out, -1, 0, (uint32_t) ((i * 1700) % 5000));
+      anim(s, ty_cb, 0, span, lroundf(6000 - 2000 * k), lv_anim_path_linear, -1, 0, (uint32_t) ((i * 1900) % 6000));
     } else {
       lv_anim_delete(s, ty_cb);
     }
@@ -803,23 +788,31 @@ inline void build_heat(int ri) {
   bool roofroom = d.shape == ROOFROOM;
   float x0 = roofroom ? 186 : d.x + 4, x1 = roofroom ? 582 : d.x + d.w - 4;
   int32_t fy = roofroom ? Y(172) : Y(d.y + d.h - 4);
-  // Schein: senkrechter Verlauf von unten (orange) nach oben (transparent)
-  r.heat_glow = box(ui.scene, X(roofroom ? 300 : d.x + 1), fy, roofroom ? D(170) : D(d.w - 2), 10, 0xFF8A3D);
-  lv_obj_set_style_bg_grad_color(r.heat_glow, C(0xFF8A3D), 0);
-  lv_obj_set_style_bg_grad_dir(r.heat_glow, LV_GRAD_DIR_VER, 0);
-  lv_obj_set_style_bg_main_opa(r.heat_glow, LV_OPA_TRANSP, 0);
-  // Glutlinie mit Lichthof
-  r.heat_line = box(ui.scene, X(x0), fy, X(x1) - X(x0), 2, 0xFF8A3D, LV_OPA_COVER, 1);
-  lv_obj_set_style_shadow_width(r.heat_line, D(7), 0);
-  lv_obj_set_style_shadow_opa(r.heat_line, 110, 0);
-  // Funken (werden je nach Bedarf benutzt)
-  int n = std::max(1, (int) lroundf(D(x1 - x0) / 56.0f * 1.4f));
+  // Aufsteigende Wärmewellen: senkrechte Schlangenlinien wie im Heizungssymbol
+  // (werden je nach Bedarf benutzt). Zwei gespiegelte Formen für etwas Abwechslung.
+  static lv_point_precise_t wave[2][8];
+  static bool wave_init = false;
+  if (!wave_init) {
+    for (int j = 0; j < 8; j++)
+      for (int m = 0; m < 2; m++)
+        wave[m][j] = {(lv_value_precise_t) lroundf(3 + (m ? -2.2f : 2.2f) * sinf(j * 0.9f)), (lv_value_precise_t) (j * 2)};
+    wave_init = true;
+  }
+  // Lage nach dem goldenen Schnitt: auch die ersten wenigen verteilen sich über die ganze Breite
+  int n = std::max(1, (int) lroundf(D(x1 - x0) / 44.0f * 1.4f));
   for (int i = 0; i < n; i++) {
-    int32_t sx = X(x0) + (X(x1) - X(x0)) * (2 * i + 1) / (2 * n) + ((i * 37) % 13) - 6;
-    lv_obj_t *s = box(ui.scene, sx, fy - 4, 2, 2, 0xFFD9A0, LV_OPA_COVER, LV_RADIUS_CIRCLE);
+    float f = fmodf((i + 0.5f) * 0.618034f, 1.0f);
+    int32_t sx = X(x0) + lroundf((X(x1) - X(x0) - 6) * f);
+    lv_obj_t *s = lv_line_create(ui.scene);
+    lv_line_set_points(s, wave[i % 2], 8);
+    lv_obj_set_pos(s, sx, fy - 16);
+    lv_obj_set_style_line_color(s, C(0xFFB777), 0);
+    lv_obj_set_style_line_width(s, 2, 0);
+    lv_obj_set_style_line_rounded(s, true, 0);
+    lv_obj_remove_flag(s, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_opa(s, 0, 0);
     set_hidden(s, true);
-    r.sparks.push_back(s);
+    r.waves.push_back(s);
   }
 }
 
@@ -1631,11 +1624,11 @@ inline void build() {
 
 // Heizkreise legen ihre Objekte beim ersten Wert an
 inline void ensure_heat(int ri) {
-  if (rooms[ri].heat_line == nullptr && !rooms[ri].circuits.empty()) {
+  if (rooms[ri].waves.empty() && !rooms[ri].circuits.empty()) {
     uint32_t from = lv_obj_get_child_count(ui.scene);
     build_heat(ri);
     adopt(rooms[ri], from);
-    // Beschriftung über die Glut legen
+    // Beschriftung über die Wärmewellen legen
     lv_obj_move_foreground(rooms[ri].name);
     lv_obj_move_foreground(rooms[ri].temp_l);
     lv_obj_move_foreground(rooms[ri].chip_i);
