@@ -5,7 +5,7 @@
 //    Solarmodule, Raumfarben (nach Temperatur), Garagen, Hof, Auto, Strommast.
 //    Neu gezeichnet wird nur, wenn sich Tag/Nacht oder eine Temperatur ändert.
 //  * Darüber liegen LVGL-Objekte für alles, was lebt: Fenster (Licht, Rollladen,
-//    offen), Heizung (Glutlinie, Funken), Energiefluss (Punkte), Beschriftungen.
+//    offen), Heizung (aufsteigende Funken), Energiefluss (Punkte), Beschriftungen.
 //  * Rechts eine Seitenleiste: Übersicht oder der angetippte Raum.
 //
 // Koordinaten unten sind die des Mockups (viewBox -24 0 692 640) und werden
@@ -129,7 +129,7 @@ struct RoomState {
   bool smoke = false;
   // Objekte
   lv_obj_t *hit = nullptr, *name = nullptr, *temp_l = nullptr, *chip_i = nullptr, *chip_v = nullptr;
-  lv_obj_t *heat_glow = nullptr, *heat_line = nullptr, *alarm = nullptr;
+  lv_obj_t *alarm = nullptr;
   lv_obj_t *layer = nullptr;  // Behälter für alle Objekte des Raums
   int32_t gx = 0, gy = 0;     // seine Lage in der Szene
   std::vector<lv_obj_t *> sparks;
@@ -692,25 +692,10 @@ inline uint32_t heat_color(float v) {
 inline void paint_heat(int ri) {
   auto &d = rooms_def()[ri];
   auto &r = rooms[ri];
-  if (r.heat_line == nullptr)
+  if (r.sparks.empty())
     return;
   float k = avg_open(r) / 100.0f;
   bool on = k > 0.005f;
-  set_hidden(r.heat_line, !on);
-  set_hidden(r.heat_glow, !on);
-  if (on) {
-    int32_t hh = lroundf(D(d.h) * (0.22f + 0.4f * k));
-    int32_t bottom = d.shape == ROOFROOM ? Y(172) : Y(d.y + d.h - 2);
-    lv_obj_set_y(r.heat_glow, bottom - hh - r.gy);
-    lv_obj_set_height(r.heat_glow, hh);
-    lv_obj_set_style_bg_grad_opa(r.heat_glow, lroundf(255 * (0.18f + 0.3f * k)), 0);
-    lv_obj_set_style_bg_color(r.heat_line, C(heat_color(45 + 35 * k)), 0);
-    lv_obj_set_style_shadow_color(r.heat_line, C(heat_color(40 + 30 * k)), 0);
-    uint32_t dur = lroundf(4200 - 2200 * k);
-    anim(r.heat_line, opa_cb, 255, lroundf(255 * (0.45f + 0.15f * k)), dur / 2, lv_anim_path_ease_in_out, -1, dur / 2);
-  } else {
-    lv_anim_delete(r.heat_line, opa_cb);
-  }
   // Funken: Anzahl nach Breite und Öffnung
   size_t want = on ? (size_t) std::max(1L, lroundf(D(d.w) / 56.0f * (0.4f + k))) : 0;
   for (size_t i = 0; i < r.sparks.size(); i++) {
@@ -803,16 +788,7 @@ inline void build_heat(int ri) {
   bool roofroom = d.shape == ROOFROOM;
   float x0 = roofroom ? 186 : d.x + 4, x1 = roofroom ? 582 : d.x + d.w - 4;
   int32_t fy = roofroom ? Y(172) : Y(d.y + d.h - 4);
-  // Schein: senkrechter Verlauf von unten (orange) nach oben (transparent)
-  r.heat_glow = box(ui.scene, X(roofroom ? 300 : d.x + 1), fy, roofroom ? D(170) : D(d.w - 2), 10, 0xFF8A3D);
-  lv_obj_set_style_bg_grad_color(r.heat_glow, C(0xFF8A3D), 0);
-  lv_obj_set_style_bg_grad_dir(r.heat_glow, LV_GRAD_DIR_VER, 0);
-  lv_obj_set_style_bg_main_opa(r.heat_glow, LV_OPA_TRANSP, 0);
-  // Glutlinie mit Lichthof
-  r.heat_line = box(ui.scene, X(x0), fy, X(x1) - X(x0), 2, 0xFF8A3D, LV_OPA_COVER, 1);
-  lv_obj_set_style_shadow_width(r.heat_line, D(7), 0);
-  lv_obj_set_style_shadow_opa(r.heat_line, 110, 0);
-  // Funken (werden je nach Bedarf benutzt)
+  // Aufsteigende Funken (werden je nach Bedarf benutzt)
   int n = std::max(1, (int) lroundf(D(x1 - x0) / 56.0f * 1.4f));
   for (int i = 0; i < n; i++) {
     int32_t sx = X(x0) + (X(x1) - X(x0)) * (2 * i + 1) / (2 * n) + ((i * 37) % 13) - 6;
@@ -1631,11 +1607,11 @@ inline void build() {
 
 // Heizkreise legen ihre Objekte beim ersten Wert an
 inline void ensure_heat(int ri) {
-  if (rooms[ri].heat_line == nullptr && !rooms[ri].circuits.empty()) {
+  if (rooms[ri].sparks.empty() && !rooms[ri].circuits.empty()) {
     uint32_t from = lv_obj_get_child_count(ui.scene);
     build_heat(ri);
     adopt(rooms[ri], from);
-    // Beschriftung über die Glut legen
+    // Beschriftung über die Funken legen
     lv_obj_move_foreground(rooms[ri].name);
     lv_obj_move_foreground(rooms[ri].temp_l);
     lv_obj_move_foreground(rooms[ri].chip_i);
