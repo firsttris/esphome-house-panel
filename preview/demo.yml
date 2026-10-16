@@ -50,6 +50,12 @@ esphome:
             for (auto &f : fb)
               house::circuit(f.r, f.i, f.n, f.v);
             house::room_target("wohnen", 19.5, "heating");
+            house::thermostat("wohnen", "climate.demo", "auto");
+            house::room_target("schlaf", 19.0, "idle");
+            house::thermostat("schlaf", "climate.demo", "auto");
+            house::ac_mode("schlaf", "climate.demo_ac", "cool");
+            house::ac_target("schlaf", 21.0);
+            house::ac_fan("schlaf", "quiet");
             house::set_energy("pv", 6200);
             house::set_energy("hoy", 1800);
             house::set_energy("house", 1400);

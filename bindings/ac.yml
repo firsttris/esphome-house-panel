@@ -1,0 +1,28 @@
+# Klimaanlage: Karte "Klima" in der Raumansicht mit Drehregler, Modi und Lüfter;
+# im Haus ein Symbol hinter der Temperatur, solange sie läuft.
+# Änderungen gehen 2 s nach der letzten Berührung raus (Daikin Onecta erlaubt nur 200 Aufrufe am Tag).
+# vars: room (Raum-ID aus core/house.h), entity_id (climate.*, Modi off / heat / cool / heat_cool / dry / fan_only)
+
+text_sensor:
+  - platform: homeassistant
+    id: ${room}_ac_mode
+    entity_id: ${entity_id}
+    internal: true
+    on_value:
+      - lambda: house::ac_mode("${room}", "${entity_id}", x);
+  - platform: homeassistant
+    id: ${room}_ac_fan
+    entity_id: ${entity_id}
+    attribute: fan_mode
+    internal: true
+    on_value:
+      - lambda: house::ac_fan("${room}", x);
+
+sensor:
+  - platform: homeassistant
+    id: ${room}_ac_target
+    entity_id: ${entity_id}
+    attribute: temperature
+    internal: true
+    on_value:
+      - lambda: house::ac_target("${room}", x);
