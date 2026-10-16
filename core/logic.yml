@@ -17,12 +17,16 @@ esphome:
             u.f14 = id(font_14)->get_lv_font();
             u.f14b = id(font_14b)->get_lv_font();
             u.f20b = id(font_20b)->get_lv_font();
+            u.f44 = id(font_44)->get_lv_font();
             u.i11 = id(icons_11)->get_lv_font();
             u.i16 = id(icons_16)->get_lv_font();
             u.i20 = id(icons_20)->get_lv_font();
             u.i22 = id(icons_22)->get_lv_font();
             house::call_action = [](const std::string &action, const std::string &entity) {
               id(ha_action)->execute(action, entity);
+            };
+            house::call_climate = [](const std::string &entity, int what, const std::string &value) {
+              id(ha_climate)->execute(entity, what, value);
             };
             house::show_fps = ${show_fps | default('true')};
             house::build();
@@ -55,6 +59,51 @@ script:
           action: !lambda return action;
           data:
             entity_id: !lambda return entity;
+
+  # Heizung/Klima: what 0 = Betriebsart, 1 = Zieltemperatur, 2 = Lüfter, 3 = Preset (boost/none)
+  - id: ha_climate
+    mode: queued
+    parameters:
+      entity: string
+      what: int
+      value: string
+    then:
+      - if:
+          condition:
+            lambda: return what == 0;
+          then:
+            - homeassistant.action:
+                action: climate.set_hvac_mode
+                data:
+                  entity_id: !lambda return entity;
+                  hvac_mode: !lambda return value;
+      - if:
+          condition:
+            lambda: return what == 1;
+          then:
+            - homeassistant.action:
+                action: climate.set_temperature
+                data:
+                  entity_id: !lambda return entity;
+                  temperature: !lambda return value;
+      - if:
+          condition:
+            lambda: return what == 2;
+          then:
+            - homeassistant.action:
+                action: climate.set_fan_mode
+                data:
+                  entity_id: !lambda return entity;
+                  fan_mode: !lambda return value;
+      - if:
+          condition:
+            lambda: return what == 3;
+          then:
+            - homeassistant.action:
+                action: climate.set_preset_mode
+                data:
+                  entity_id: !lambda return entity;
+                  preset_mode: !lambda return value;
 
   # Kopfzeile: Wettersymbol, Außentemperatur und Zustand auf Deutsch
   - id: update_weather

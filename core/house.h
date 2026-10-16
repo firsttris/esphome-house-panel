@@ -117,10 +117,22 @@ struct Cover { std::string name, entity; float pos = NAN; int dir = 0; };
 struct Contact { std::string name, entity; bool open = false; };
 struct Circuit { std::string name; float level = 0; };
 
+// Klima eines Raums: Wandthermostat (Fußbodenheizung) oder Klimaanlage
+struct Clim {
+  std::string entity;  // climate.*; leer = nicht vorhanden
+  int mode = -1;       // Index in TH_KEYS bzw. AC_KEYS, -1 = unbekannt
+  float target = NAN;
+  int fan = 0;         // nur Klimaanlage: Index in FAN_KEYS
+  bool boost = false;  // nur Thermostat: preset_mode == boost
+  std::string action;  // hvac_action: heating, cooling, idle …
+  uint32_t edited = 0;   // letzte Bedienung am Panel (lv_tick)
+  uint8_t pending = 0;   // noch zu senden: 1 = Modus, 2 = Temperatur, 4 = Lüfter/Boost
+};
+
 struct Pane;
 struct RoomState {
-  float temp = NAN, hum = NAN, target = NAN;
-  std::string action;  // hvac_action des Thermostats
+  float temp = NAN, hum = NAN;
+  Clim th, ac;  // Wandthermostat, Klimaanlage
   std::vector<Light> lights;
   std::vector<Cover> covers;
   std::vector<Contact> contacts;
@@ -128,7 +140,7 @@ struct RoomState {
   bool shares_circuits = false;  // zeigt fremde Kreise (Küche, Eingang): nicht doppelt zählen
   bool smoke = false;
   // Objekte
-  lv_obj_t *hit = nullptr, *name = nullptr, *temp_l = nullptr, *chip_i = nullptr, *chip_v = nullptr;
+  lv_obj_t *hit = nullptr, *name = nullptr, *temp_l = nullptr, *chip_i = nullptr, *chip_v = nullptr, *chip_ac = nullptr;
   lv_obj_t *alarm = nullptr;
   lv_obj_t *layer = nullptr;  // Behälter für alle Objekte des Raums
   int32_t gx = 0, gy = 0;     // seine Lage in der Szene
@@ -143,7 +155,7 @@ struct Energy {
 struct Ui {
   lv_obj_t *canvas = nullptr, *scene = nullptr, *side = nullptr, *subtitle = nullptr;
   const lv_font_t *f11b = nullptr, *f11 = nullptr, *f12 = nullptr, *f13 = nullptr, *f14 = nullptr, *f14b = nullptr,
-                  *f20b = nullptr, *i11 = nullptr, *i16 = nullptr, *i20 = nullptr, *i22 = nullptr;
+                  *f20b = nullptr, *f44 = nullptr, *i11 = nullptr, *i16 = nullptr, *i20 = nullptr, *i22 = nullptr;
 };
 
 inline Ui ui;
@@ -158,6 +170,7 @@ inline RoomState *room(const std::string &id) {
   auto it = room_index.find(id);
   return it == room_index.end() ? nullptr : &rooms[it->second];
 }
+inline void paint_ac_chip(int ri);
 
 // ---------------------------------------------------------------------------
 // Canvas: Zeichenhilfen
@@ -724,6 +737,7 @@ inline void paint_heat(int ri) {
     lv_obj_align_to(r.chip_i, r.temp_l, LV_ALIGN_OUT_RIGHT_MID, 4, 0);
     lv_obj_align_to(r.chip_v, r.chip_i, LV_ALIGN_OUT_RIGHT_MID, 2, 0);
   }
+  paint_ac_chip(ri);
 }
 
 // Raum-Behälter: Beim Neuzeichnen prüft LVGL zuerst den Behälter und nur bei
@@ -1346,11 +1360,453 @@ inline Ref *ref(int room, int idx) {
   return r;
 }
 
+// ---------------------------------------------------------------------------
+// Heizung (Wandthermostat) und Klimaanlage
+//
+// In der Raumansicht je eine kompakte Karte mit − / +; ein Tipp auf die Karte
+// zeigt rechts den Drehregler mit Modi (wie im esphome-room-panel). Änderungen
+// werden gesammelt und kurz nach der letzten Berührung gesendet (Klimaanlage:
+// 2 s, Daikin Onecta erlaubt nur 200 Aufrufe am Tag).
+// ---------------------------------------------------------------------------
+constexpr int TH_N = 3, AC_N = 6, FAN_N = 7;
+inline const char *const TH_KEYS[TH_N] = {"auto", "heat", "off"};
+inline const char *const TH_NAMES[TH_N] = {"Zeitplan", "Manuell", "Aus"};
+inline const char *const TH_ICONS[TH_N] = {"\U000F00F0", "\U000F0E47", "\U000F0425"};
+inline const uint32_t TH_COLORS[TH_N] = {0xFFA36B, 0xFF7A45, 0x6B7488};
+inline const char *const AC_KEYS[AC_N] = {"off", "heat", "cool", "heat_cool", "dry", "fan_only"};
+inline const char *const AC_NAMES[AC_N] = {"Aus", "Heizen", "Kühlen", "Auto", "Trocken", "Lüften"};
+inline const char *const AC_ICONS[AC_N] = {"\U000F0425", "\U000F0238", "\U000F0717", "\U000F1A79", "\U000F058C", "\U000F0210"};
+inline const uint32_t AC_COLORS[AC_N] = {0x6B7488, 0xFF7A45, 0x46C2FF, 0xB392FF, 0x3DD6C0, 0xA9B6CB};
+inline const char *const FAN_KEYS[FAN_N] = {"auto", "quiet", "1", "2", "3", "4", "5"};
+inline const char *const FAN_NAMES[FAN_N] = {"Auto", "Leise", "Stufe 1", "Stufe 2", "Stufe 3", "Stufe 4", "Stufe 5"};
+inline const int FAN_LEVEL[FAN_N] = {0, 1, 1, 2, 3, 4, 5};
+constexpr uint32_t OFF_GREY = 0x6B7488;
+
+// Senden an HA: what 0 = hvac_mode, 1 = temperature, 2 = fan_mode, 3 = preset_mode
+inline std::function<void(const std::string &, int, const std::string &)> call_climate;
+
+inline int key_index(const char *const *keys, int n, const std::string &s) {
+  for (int i = 0; i < n; i++)
+    if (s == keys[i])
+      return i;
+  return -1;
+}
+
+// Bedienung am Panel hält HA-Werte kurz zurück, damit nichts zurückspringt
+inline bool clim_editing(const Clim &c) { return c.edited != 0 && lv_tick_elaps(c.edited) < 6000; }
+
+inline uint32_t clim_color(const Clim &c, bool ac) {
+  if (c.mode < 0)
+    return OFF_GREY;
+  if (ac)
+    return AC_COLORS[c.mode];
+  if (c.mode == 2)
+    return OFF_GREY;
+  return c.action == "heating" || c.boost ? 0xFF7A45 : 0xFFA36B;
+}
+
+// Zustand in einer Zeile, z. B. "Zeitplan · heizt" oder "Kühlen · Lüfter Auto"
+inline void clim_status(const Clim &c, bool ac, char *b, size_t n) {
+  if (c.mode < 0)
+    snprintf(b, n, "--");
+  else if (ac)
+    snprintf(b, n, c.mode == 0 ? "Aus" : "%s · Lüfter %s", AC_NAMES[c.mode], FAN_NAMES[c.fan]);
+  else if (c.mode == 2)
+    snprintf(b, n, "Aus");
+  else
+    snprintf(b, n, "%s · %s", c.boost ? "Boost" : TH_NAMES[c.mode], c.action == "heating" ? "heizt" : "ruht");
+}
+
+inline float clim_min(bool ac) { return ac ? 18 : 15; }
+inline float clim_max(bool ac) { return ac ? 32 : 28; }
+
+// Detailansicht rechts: Drehregler und Modi
+inline int detail = -1;  // -1 = Raumansicht, 0 = Heizung, 1 = Klima
+struct ClimUi {
+  int room = -1, kind = -1;
+  lv_obj_t *arc = nullptr, *halo = nullptr, *mode_l = nullptr, *target_l = nullptr, *room_l = nullptr;
+  lv_obj_t *modes = nullptr, *extra = nullptr, *extra_t = nullptr, *bars = nullptr, *send_l = nullptr;
+  lv_obj_t *card_v = nullptr, *card_s = nullptr;  // kompakte Karte (Raumansicht), für − / + ohne Neuaufbau
+};
+inline ClimUi cui;
+inline uint32_t clim_sent = 0;  // wann zuletzt gesendet (für "Gesendet ✓")
+
+inline Clim &clim_of(int ri, int kind) { return kind ? rooms[ri].ac : rooms[ri].th; }
+
+// Symbol der Klimaanlage hinter Temperatur und Heizwert im Haus, solange sie läuft
+inline void paint_ac_chip(int ri) {
+  auto &r = rooms[ri];
+  if (r.chip_ac == nullptr)
+    return;
+  bool on = !r.ac.entity.empty() && r.ac.mode > 0;
+  set_hidden(r.chip_ac, !on);
+  if (!on)
+    return;
+  lv_label_set_text(r.chip_ac, AC_ICONS[r.ac.mode]);
+  lv_obj_set_style_text_color(r.chip_ac, C(AC_COLORS[r.ac.mode]), 0);
+  lv_obj_t *after = !lv_obj_has_flag(r.chip_v, LV_OBJ_FLAG_HIDDEN) ? r.chip_v
+                    : !lv_obj_has_flag(r.chip_i, LV_OBJ_FLAG_HIDDEN) ? r.chip_i : r.temp_l;
+  lv_obj_update_layout(after);
+  lv_obj_align_to(r.chip_ac, after, LV_ALIGN_OUT_RIGHT_MID, 4, 0);
+}
+
+// Neue Werte in die offene Ansicht schreiben, ohne sie neu aufzubauen
+inline void clim_render() {
+  if (cui.room < 0 || cui.kind < 0)
+    return;
+  bool ac = cui.kind == 1;
+  Clim &c = clim_of(cui.room, cui.kind);
+  uint32_t col = clim_color(c, ac);
+  bool off = c.mode < 0 || (ac ? c.mode == 0 : c.mode == 2);
+  char b[48];
+  if (cui.target_l) {
+    fmt_temp(b, sizeof b, c.target);
+    if (char *g = strstr(b, "°"))
+      *g = 0;  // Grad steht als eigenes Zeichen daneben
+    lv_label_set_text(cui.target_l, b);
+  }
+  if (cui.arc) {
+    lv_obj_set_style_arc_color(cui.arc, C(off ? 0x4A546A : col), LV_PART_INDICATOR);
+    lv_obj_set_style_border_color(cui.arc, C(off ? 0x4A546A : col), LV_PART_KNOB);
+    if (!std::isnan(c.target) && !lv_obj_has_state(cui.arc, LV_STATE_PRESSED))
+      lv_arc_set_value(cui.arc, lroundf(c.target * 2));
+  }
+  if (cui.halo) {
+    lv_obj_set_style_bg_color(cui.halo, C(col), 0);
+    bool warm = ac ? !off : (!off && (c.action == "heating" || c.boost));
+    lv_obj_set_style_bg_opa(cui.halo, warm ? 34 : 0, 0);
+  }
+  if (cui.mode_l) {
+    if (off)
+      snprintf(b, sizeof b, "Aus · Ziel");
+    else if (ac)
+      snprintf(b, sizeof b, "%s auf", AC_NAMES[c.mode]);
+    else
+      snprintf(b, sizeof b, "%s", c.boost ? "Boost aktiv" : c.action == "heating" ? "Heizt auf" : c.mode == 0 ? "Zeitplan · Ziel" : "Manuell · Ziel");
+    lv_label_set_text(cui.mode_l, b);
+    lv_obj_set_style_text_color(cui.mode_l, C(off ? MUTE : col), 0);
+  }
+  if (cui.room_l) {
+    char t[16];
+    fmt_temp(t, sizeof t, rooms[cui.room].temp);
+    snprintf(b, sizeof b, "Raum %s", t);
+    lv_label_set_text(cui.room_l, b);
+  }
+  // Modus-Knöpfe: Kinder 0 = Icon, 1 = Text
+  if (cui.modes) {
+    int n = ac ? AC_N : TH_N;
+    for (int i = 0; i < n; i++) {
+      lv_obj_t *bt = lv_obj_get_child(cui.modes, i);
+      bool sel = i == c.mode;
+      uint32_t mc = ac ? AC_COLORS[i] : TH_COLORS[i];
+      lv_obj_set_style_border_color(bt, C(sel ? mc : LINE), 0);
+      lv_obj_set_style_bg_color(bt, sel ? mixc(CARD, mc, 0.18f) : C(CARD), 0);
+      lv_obj_set_style_text_color(lv_obj_get_child(bt, 0), C(sel ? mc : MUTE), 0);
+      lv_obj_set_style_text_color(lv_obj_get_child(bt, 1), C(sel ? mc : MUTE), 0);
+    }
+  }
+  // Klima: Lüfter (Text + Balken); Heizung: Boost-Knopf
+  if (cui.extra) {
+    if (ac) {
+      lv_label_set_text(cui.extra_t, FAN_NAMES[c.fan]);
+      lv_obj_set_style_text_color(lv_obj_get_child(cui.extra, 0), C(off ? 0xA9B6CB : col), 0);
+      for (int i = 0; cui.bars && i < 5; i++) {
+        bool lit = !off && (FAN_LEVEL[c.fan] == 0 || i < FAN_LEVEL[c.fan]);
+        lv_obj_t *bar = lv_obj_get_child(cui.bars, i);
+        lv_obj_set_style_bg_color(bar, C(lit ? col : LINE), 0);
+        lv_obj_set_style_bg_opa(bar, lit && FAN_LEVEL[c.fan] == 0 ? 120 : 255, 0);
+      }
+    } else {
+      uint32_t bc = c.boost ? 0xFF7A45 : MUTE;
+      lv_obj_set_style_border_color(cui.extra, C(c.boost ? 0xFF7A45 : LINE), 0);
+      lv_obj_set_style_bg_color(cui.extra, c.boost ? mixc(CARD, 0xFF7A45, 0.18f) : C(CARD), 0);
+      lv_obj_set_style_text_color(lv_obj_get_child(cui.extra, 0), C(bc), 0);
+      lv_label_set_text(cui.extra_t, c.boost ? "Aktiv · tippen beendet" : "Kurz volle Wärme");
+    }
+  }
+  if (cui.send_l)
+    lv_label_set_text(cui.send_l, c.pending ? "Sendet gleich …" : (clim_sent && lv_tick_elaps(clim_sent) < 4000) ? "Gesendet ✓" : "");
+}
+
+// Bedienung: Wert ändern, Senden vormerken, Anzeige sofort auffrischen
+inline void clim_changed(int ri, int kind, uint8_t what) {
+  Clim &c = clim_of(ri, kind);
+  c.edited = lv_tick_get();
+  c.pending |= what;
+  if (cui.room == ri && cui.kind == kind)
+    clim_render();
+  if (cui.card_v && detail < 0 && cui.room == ri && cui.kind == kind) {
+    char b[16], s[48];
+    fmt_temp(b, sizeof b, c.target);
+    lv_label_set_text(cui.card_v, b);
+    clim_status(c, kind == 1, s, sizeof s);
+    lv_label_set_text(cui.card_s, s);
+  }
+  if (kind == 1)
+    paint_ac_chip(ri);
+}
+
+inline void clim_step(int ri, int kind, float d) {
+  Clim &c = clim_of(ri, kind);
+  bool ac = kind == 1;
+  float t = std::isnan(c.target) ? (ac ? 22.0f : 20.0f) : c.target;
+  c.target = std::clamp(t + d, clim_min(ac), clim_max(ac));
+  clim_changed(ri, kind, 2);
+}
+
+// Gesammelte Änderungen senden: Heizung 1 s, Klima 2 s nach der letzten Berührung
+inline void clim_flush() {
+  for (auto &r : rooms)
+    for (int kind = 0; kind < 2; kind++) {
+      Clim &c = kind ? r.ac : r.th;
+      if (!c.pending || lv_tick_elaps(c.edited) < (kind ? 2000u : 1000u))
+        continue;
+      if (call_climate && !c.entity.empty()) {
+        if ((c.pending & 1) && c.mode >= 0)
+          call_climate(c.entity, 0, kind ? AC_KEYS[c.mode] : TH_KEYS[c.mode]);
+        if ((c.pending & 2) && !std::isnan(c.target)) {
+          char b[16];
+          snprintf(b, sizeof b, "%.1f", c.target);
+          call_climate(c.entity, 1, b);
+        }
+        if (c.pending & 4) {
+          if (kind)
+            call_climate(c.entity, 2, FAN_KEYS[c.fan]);
+          else
+            call_climate(c.entity, 3, c.boost ? "boost" : "none");
+        }
+      }
+      c.pending = 0;
+      clim_sent = lv_tick_get();
+    }
+  // "Gesendet ✓" nach ein paar Sekunden ausblenden
+  static bool shown = false;
+  bool now = clim_sent && lv_tick_elaps(clim_sent) < 4000;
+  if (cui.send_l && (now != shown || now))
+    clim_render();
+  shown = now;
+}
+
+// Runder Knopf mit Symbol
+inline lv_obj_t *round_btn(lv_obj_t *parent, int32_t x, int32_t y, int32_t s, const char *icon) {
+  lv_obj_t *b = box(parent, x, y, s, s, CARD, LV_OPA_COVER, LV_RADIUS_CIRCLE);
+  lv_obj_set_style_border_color(b, C(LINE), 0);
+  lv_obj_set_style_border_width(b, 1, 0);
+  lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_style_bg_color(b, C(CARD2), LV_STATE_PRESSED);
+  lv_obj_center(text(b, icon, ui.i20, TEXT));
+  return b;
+}
+
+// − / + auf der kompakten Karte: Ziel ändern und Wert und Zustand der Karte ohne Neuaufbau auffrischen
+// (Kinder der Karte: 0 Symbol, 1 Name, 2 Zustand, 3 −, 4 Wert, 5 +)
+inline void clim_card_step(lv_event_t *e, float d) {
+  auto *rf = (Ref *) lv_event_get_user_data(e);
+  lv_obj_t *card = lv_obj_get_parent((lv_obj_t *) lv_event_get_target(e));
+  cui.room = rf->room;
+  cui.kind = rf->idx;
+  cui.card_v = lv_obj_get_child(card, 4);
+  cui.card_s = lv_obj_get_child(card, 2);
+  clim_step(rf->room, rf->idx, d);
+}
+
+// Kompakte Karte in der Raumansicht: Symbol, Name, Zustand, − Ziel +
+inline void clim_card(lv_obj_t *side, int ri, int kind) {
+  Clim &c = clim_of(ri, kind);
+  bool ac = kind == 1;
+  uint32_t col = clim_color(c, ac);
+  char b[48];
+  lv_obj_t *cc = card(side);
+  lv_obj_set_height(cc, 66);
+  lv_obj_add_flag(cc, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_style_bg_color(cc, C(CARD2), LV_STATE_PRESSED);
+  lv_obj_t *bub = box(cc, 0, 0, 40, 40, lv_color_to_u32(mixc(CARD, col, 0.22f)) & 0xFFFFFF, LV_OPA_COVER, 13);
+  lv_obj_add_flag(bub, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_center(text(bub, ac ? "\U000F001B" : "\U000F0438", ui.i22, col));
+  lv_obj_t *nm = text(cc, ac ? "Klima" : "Heizung", ui.f14b, TEXT);
+  lv_obj_add_flag(nm, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_set_pos(nm, 50, 1);
+  clim_status(c, ac, b, sizeof b);
+  lv_obj_t *st = text(cc, b, ui.f12, c.mode < 0 || (ac ? c.mode == 0 : c.mode == 2) ? MUTE : col);
+  lv_obj_add_flag(st, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_set_pos(st, 50, 22);
+  lv_obj_set_width(st, 140);
+  lv_label_set_long_mode(st, LV_LABEL_LONG_MODE_DOTS);
+  lv_obj_t *minus = round_btn(cc, 196, 2, 36, "\U000F0374");
+  lv_obj_add_flag(minus, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  fmt_temp(b, sizeof b, c.target);
+  lv_obj_t *v = text(cc, b, ui.f14b, TEXT);
+  lv_obj_add_flag(v, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_set_width(v, 52);
+  lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_pos(v, 234, 11);
+  lv_obj_t *plus = round_btn(cc, 288, 2, 36, "\U000F0415");
+  lv_obj_add_flag(plus, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  // − / + ändern das Ziel direkt
+  lv_obj_add_event_cb(minus, [](lv_event_t *e) { clim_card_step(e, -0.5f); }, LV_EVENT_CLICKED, ref(ri, kind));
+  lv_obj_add_event_cb(plus, [](lv_event_t *e) { clim_card_step(e, 0.5f); }, LV_EVENT_CLICKED, ref(ri, kind));
+  // Tipp auf die Karte: Drehregler rechts
+  lv_obj_add_event_cb(cc, [](lv_event_t *e) {
+    auto *rf = (Ref *) lv_event_get_user_data(e);
+    detail = rf->idx;
+    lv_obj_scroll_to_y(ui.side, 0, LV_ANIM_OFF);
+    build_side();
+  }, LV_EVENT_CLICKED, ref(ri, kind));
+}
+
+// Detailansicht: Kopf mit Zurück, Drehregler, Modi, Lüfter bzw. Boost
+inline void build_clim(int ri, int kind) {
+  lv_obj_t *side = ui.side;
+  auto &d = rooms_def()[ri];
+  Clim &c = clim_of(ri, kind);
+  bool ac = kind == 1;
+  cui = ClimUi{};
+  cui.room = ri;
+  cui.kind = kind;
+  // Kopf
+  lv_obj_t *head = card(side);
+  lv_obj_set_flex_flow(head, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(head, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(head, 10, 0);
+  lv_obj_t *back = box(head, 0, 0, 36, 36, CARD2, LV_OPA_COVER, 12);
+  lv_obj_add_flag(back, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_center(text(back, "\U000F004D", ui.i20, TEXT));
+  lv_obj_add_event_cb(back, [](lv_event_t *) {
+    detail = -1;
+    build_side();
+  }, LV_EVENT_CLICKED, nullptr);
+  text(head, ac ? "Klima" : "Heizung", ui.f20b, TEXT);
+  lv_obj_t *meta = text(head, d.name, ui.f13, MUTE);
+  lv_obj_set_flex_grow(meta, 1);
+  lv_obj_set_style_text_align(meta, LV_TEXT_ALIGN_RIGHT, 0);
+
+  // Drehregler
+  const int32_t AR = 224, W = 350;
+  lv_obj_t *dial = lv_obj_create(side);
+  lv_obj_remove_style_all(dial);
+  lv_obj_set_size(dial, W, AR + 4);
+  lv_obj_remove_flag(dial, LV_OBJ_FLAG_SCROLLABLE);
+  int32_t ax = (W - AR) / 2;
+  cui.halo = box(dial, ax + 30, 30, AR - 60, AR - 60, OFF_GREY, LV_OPA_TRANSP, LV_RADIUS_CIRCLE);
+  lv_obj_t *arc = lv_arc_create(dial);
+  cui.arc = arc;
+  lv_obj_set_pos(arc, ax, 0);
+  lv_obj_set_size(arc, AR, AR);
+  lv_arc_set_rotation(arc, 135);
+  lv_arc_set_bg_angles(arc, 0, 270);
+  lv_arc_set_range(arc, lroundf(clim_min(ac) * 2), lroundf(clim_max(ac) * 2));
+  lv_arc_set_value(arc, lroundf((std::isnan(c.target) ? (ac ? 22.0f : 20.0f) : c.target) * 2));
+  lv_obj_set_style_arc_width(arc, 16, LV_PART_MAIN);
+  lv_obj_set_style_arc_color(arc, C(CARD2), LV_PART_MAIN);
+  lv_obj_set_style_arc_rounded(arc, true, LV_PART_MAIN);
+  lv_obj_set_style_arc_width(arc, 16, LV_PART_INDICATOR);
+  lv_obj_set_style_arc_rounded(arc, true, LV_PART_INDICATOR);
+  lv_obj_set_style_pad_all(arc, 5, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(arc, C(0xF4F7FB), LV_PART_KNOB);
+  lv_obj_set_style_bg_opa(arc, LV_OPA_COVER, LV_PART_KNOB);
+  lv_obj_set_style_border_width(arc, 5, LV_PART_KNOB);
+  lv_obj_set_style_pad_all(arc, 2, LV_PART_KNOB);
+  lv_obj_remove_flag(arc, LV_OBJ_FLAG_SCROLL_CHAIN);
+  lv_obj_add_event_cb(arc, [](lv_event_t *e) {
+    Clim &c = clim_of(cui.room, cui.kind);
+    c.target = lv_arc_get_value((lv_obj_t *) lv_event_get_target(e)) / 2.0f;
+    clim_changed(cui.room, cui.kind, 2);
+  }, LV_EVENT_VALUE_CHANGED, nullptr);
+  cui.mode_l = text(dial, "", ui.f12, MUTE);
+  lv_obj_set_width(cui.mode_l, AR);
+  lv_obj_set_style_text_align(cui.mode_l, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_style_text_letter_space(cui.mode_l, 1, 0);
+  lv_obj_set_pos(cui.mode_l, ax, 64);
+  lv_obj_t *tv = lv_obj_create(dial);
+  lv_obj_remove_style_all(tv);
+  lv_obj_set_size(tv, AR, 56);
+  lv_obj_set_pos(tv, ax, 80);
+  lv_obj_remove_flag(tv, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_remove_flag(tv, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_flex_flow(tv, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(tv, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+  cui.target_l = text(tv, "--", ui.f44, TEXT);
+  lv_obj_t *deg = text(tv, "°", ui.f20b, TEXT);
+  lv_obj_set_style_pad_top(deg, 6, 0);
+  cui.room_l = text(dial, "", ui.f13, MUTE);
+  lv_obj_set_width(cui.room_l, AR);
+  lv_obj_set_style_text_align(cui.room_l, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_pos(cui.room_l, ax, 140);
+  lv_obj_t *minus = round_btn(dial, ax + 38, AR - 46, 44, "\U000F0374");
+  lv_obj_add_event_cb(minus, [](lv_event_t *) { clim_step(cui.room, cui.kind, -0.5f); }, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *plus = round_btn(dial, ax + AR - 38 - 44, AR - 46, 44, "\U000F0415");
+  lv_obj_add_event_cb(plus, [](lv_event_t *) { clim_step(cui.room, cui.kind, 0.5f); }, LV_EVENT_CLICKED, nullptr);
+
+  // Modi
+  caps(side, "MODUS");
+  cui.modes = lv_obj_create(side);
+  lv_obj_remove_style_all(cui.modes);
+  lv_obj_set_size(cui.modes, W, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(cui.modes, LV_FLEX_FLOW_ROW_WRAP);
+  lv_obj_set_style_pad_row(cui.modes, 6, 0);
+  lv_obj_set_style_pad_column(cui.modes, 6, 0);
+  lv_obj_remove_flag(cui.modes, LV_OBJ_FLAG_SCROLLABLE);
+  int n = ac ? AC_N : TH_N;
+  for (int i = 0; i < n; i++) {
+    lv_obj_t *bt = box(cui.modes, 0, 0, (W - 12) / 3, 52, CARD, LV_OPA_COVER, 16);
+    lv_obj_set_style_border_width(bt, 1, 0);
+    lv_obj_add_flag(bt, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(bt, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(bt, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(bt, 1, 0);
+    text(bt, ac ? AC_ICONS[i] : TH_ICONS[i], ui.i20, MUTE);
+    text(bt, ac ? AC_NAMES[i] : TH_NAMES[i], ui.f12, MUTE);
+    lv_obj_add_event_cb(bt, [](lv_event_t *e) {
+      clim_of(cui.room, cui.kind).mode = (int) (intptr_t) lv_event_get_user_data(e);
+      clim_changed(cui.room, cui.kind, 1);
+    }, LV_EVENT_CLICKED, (void *) (intptr_t) i);
+  }
+
+  // Klima: Lüfterstufe (Tippen schaltet weiter); Heizung: Boost
+  cui.extra = box(side, 0, 0, W, 54, CARD, LV_OPA_COVER, 16);
+  lv_obj_set_style_border_color(cui.extra, C(LINE), 0);
+  lv_obj_set_style_border_width(cui.extra, 1, 0);
+  lv_obj_add_flag(cui.extra, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_t *ic = text(cui.extra, ac ? "\U000F0210" : "\U000F14DE", ui.i22, MUTE);
+  lv_obj_align(ic, LV_ALIGN_LEFT_MID, 14, 0);
+  lv_obj_t *cap = caps(cui.extra, ac ? "LÜFTER" : "BOOST");
+  lv_obj_align(cap, LV_ALIGN_LEFT_MID, 50, -9);
+  cui.extra_t = text(cui.extra, "", ui.f14, TEXT);
+  lv_obj_align(cui.extra_t, LV_ALIGN_LEFT_MID, 50, 9);
+  if (ac) {
+    cui.bars = lv_obj_create(cui.extra);
+    lv_obj_remove_style_all(cui.bars);
+    lv_obj_set_size(cui.bars, 32, 18);
+    lv_obj_align(cui.bars, LV_ALIGN_RIGHT_MID, -14, 0);
+    lv_obj_set_flex_flow(cui.bars, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(cui.bars, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+    lv_obj_set_style_pad_column(cui.bars, 3, 0);
+    for (int i = 0; i < 5; i++)
+      box(cui.bars, 0, 0, 4, 6 + 3 * i, LINE, LV_OPA_COVER, 2);
+  }
+  lv_obj_add_event_cb(cui.extra, [](lv_event_t *) {
+    Clim &c = clim_of(cui.room, cui.kind);
+    if (cui.kind == 1)
+      c.fan = (c.fan + 1) % FAN_N;
+    else
+      c.boost = !c.boost;
+    clim_changed(cui.room, cui.kind, 4);
+  }, LV_EVENT_CLICKED, nullptr);
+
+  cui.send_l = text(side, "", ui.f12, MUTE);
+  clim_render();
+  if (ui.subtitle) {
+    char a[64];
+    snprintf(a, sizeof a, "%s · %s · %s", d.floor, d.name, ac ? "Klima" : "Heizung");
+    lv_label_set_text(ui.subtitle, a);
+  }
+}
+
 inline void build_room(int ri) {
   lv_obj_t *side = ui.side;
   auto &d = rooms_def()[ri];
   auto &r = rooms[ri];
-  char a[64], t1[16], t2[16];
+  char a[64], t1[16];
   // Kopf
   lv_obj_t *head = card(side);
   lv_obj_set_flex_flow(head, LV_FLEX_FLOW_ROW);
@@ -1369,6 +1825,12 @@ inline void build_room(int ri) {
   lv_obj_t *meta = text(head, a, ui.f13, MUTE);
   lv_obj_set_flex_grow(meta, 1);
   lv_obj_set_style_text_align(meta, LV_TEXT_ALIGN_RIGHT, 0);
+
+  // Heizung und Klima: kompakt, Tipp öffnet den Drehregler
+  if (!r.th.entity.empty() || !std::isnan(r.th.target))
+    clim_card(side, ri, 0);
+  if (!r.ac.entity.empty())
+    clim_card(side, ri, 1);
 
   // Licht
   if (!r.lights.empty()) {
@@ -1485,13 +1947,6 @@ inline void build_room(int ri) {
     }
   }
 
-  // Thermostat
-  if (!std::isnan(r.target)) {
-    lv_obj_t *cc = card(side);
-    fmt_temp(t2, sizeof t2, r.target);
-    snprintf(a, sizeof a, "Ziel %s · %s", t2, r.action == "heating" ? "heizt" : r.action == "cooling" ? "kühlt" : "ruht");
-    row(cc, "\U000F0393", HEAT, "Thermostat", a);
-  }
   if (ui.subtitle) {
     snprintf(a, sizeof a, "%s · %s", d.floor, d.name);
     lv_label_set_text(ui.subtitle, a);
@@ -1501,13 +1956,22 @@ inline void build_room(int ri) {
 inline void build_side() {
   if (ui.side == nullptr)
     return;
+  // Drehregler offen: nur Werte auffrischen, nicht neu aufbauen (sonst bricht ein Ziehen ab)
+  if (selected >= 0 && detail >= 0 && cui.arc && cui.room == selected && cui.kind == detail) {
+    clim_render();
+    side_dirty = false;
+    return;
+  }
   int32_t scroll = lv_obj_get_scroll_y(ui.side);
   lv_obj_clean(ui.side);
+  cui = ClimUi{};
   ov = Overview{};
   for (auto *r : refs)
     delete r;
   refs.clear();
-  if (selected >= 0)
+  if (selected >= 0 && detail >= 0)
+    build_clim(selected, detail);
+  else if (selected >= 0)
     build_room(selected);
   else
     build_overview();
@@ -1520,6 +1984,7 @@ inline void open_room(int ri) {
   if (selected >= 0 && rooms[selected].hit)
     lv_obj_set_style_border_opa(rooms[selected].hit, LV_OPA_TRANSP, 0);
   selected = ri;
+  detail = -1;
   if (ri >= 0 && rooms[ri].hit)
     lv_obj_set_style_border_opa(rooms[ri].hit, LV_OPA_COVER, 0);
   lv_obj_scroll_to_y(ui.side, 0, LV_ANIM_OFF);
@@ -1633,8 +2098,10 @@ inline void build() {
     set_hidden(r.temp_l, technik(d));
     r.chip_i = text(sc, "\U000F0438", ui.i11, HEAT);
     r.chip_v = text(sc, "", ui.f11b, HEAT);
+    r.chip_ac = text(sc, "", ui.i11, SKY);
     set_hidden(r.chip_i, true);
     set_hidden(r.chip_v, true);
+    set_hidden(r.chip_ac, true);
     // Tippfläche mit Rahmen bei Auswahl
     r.hit = box(sc, hx, hy, hw, hh, 0, LV_OPA_TRANSP, D(4));
     lv_obj_set_style_border_color(r.hit, C(TEXT), 0);
@@ -1717,6 +2184,7 @@ inline void ensure_heat(int ri) {
 
 // Takt (40 ms): Funken an den Isolatoren (der Fluss hat einen eigenen LVGL-Timer)
 inline void tick() {
+  clim_flush();
   static uint32_t last = lv_tick_get(), spark_t = 0;
   uint32_t now = lv_tick_get();
   float dt = lv_tick_diff(now, last) / 1000.0f;
@@ -1768,6 +2236,7 @@ inline void room_temp(const std::string &id, float t) {
   fmt_temp(b, sizeof b, t);
   lv_label_set_text(r->temp_l, b);
   paint_heat(room_index[id]);
+  paint_ac_chip(room_index[id]);
   if (selected == room_index[id])
     side_dirty = true;
 }
@@ -1780,14 +2249,61 @@ inline void room_humidity(const std::string &id, float h) {
   }
 }
 
+// Heizung/Klima geändert: offene Ansicht auffrischen, Symbol im Haus
+inline void clim_update(int ri) {
+  if (selected == ri)
+    side_dirty = true;
+  paint_ac_chip(ri);
+}
+
 inline void room_target(const std::string &id, float t, const std::string &action) {
   if (auto *r = room(id)) {
-    if (!std::isnan(t))
-      r->target = t;
+    if (!std::isnan(t) && !clim_editing(r->th))
+      r->th.target = t;
     if (!action.empty())
-      r->action = action;
-    if (selected == room_index[id])
-      side_dirty = true;
+      r->th.action = action;
+    clim_update(room_index[id]);
+  }
+}
+
+// Betriebsart des Wandthermostats (auto / heat / off) und Preset (boost)
+inline void thermostat(const std::string &id, const std::string &entity, const std::string &mode) {
+  if (auto *r = room(id)) {
+    r->th.entity = entity;
+    if (!clim_editing(r->th))
+      r->th.mode = key_index(TH_KEYS, TH_N, mode);
+    clim_update(room_index[id]);
+  }
+}
+inline void thermostat_preset(const std::string &id, const std::string &preset) {
+  if (auto *r = room(id)) {
+    if (!clim_editing(r->th))
+      r->th.boost = preset == "boost";
+    clim_update(room_index[id]);
+  }
+}
+
+// Klimaanlage (aus bindings/ac.yml)
+inline void ac_mode(const std::string &id, const std::string &entity, const std::string &mode) {
+  if (auto *r = room(id)) {
+    r->ac.entity = entity;
+    if (!clim_editing(r->ac))
+      r->ac.mode = key_index(AC_KEYS, AC_N, mode);
+    clim_update(room_index[id]);
+  }
+}
+inline void ac_target(const std::string &id, float t) {
+  if (auto *r = room(id)) {
+    if (!std::isnan(t) && !clim_editing(r->ac))
+      r->ac.target = t;
+    clim_update(room_index[id]);
+  }
+}
+inline void ac_fan(const std::string &id, const std::string &fan) {
+  if (auto *r = room(id)) {
+    if (!clim_editing(r->ac))
+      r->ac.fan = std::max(0, key_index(FAN_KEYS, FAN_N, fan));
+    clim_update(room_index[id]);
   }
 }
 

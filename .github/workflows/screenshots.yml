@@ -48,7 +48,8 @@ jobs:
       - name: Copy to docs
         run: |
           mkdir -p docs
-          cp preview/shots/house/haus.png preview/shots/house/raum.png preview/shots/house/demo.gif docs/
+          cp preview/shots/house/haus.png preview/shots/house/raum.png preview/shots/house/schlafzimmer.png \
+            preview/shots/house/klima.png preview/shots/house/heizung.png preview/shots/house/demo.gif docs/
 
       - name: Commit if changed
         run: |

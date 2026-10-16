@@ -1,5 +1,6 @@
-# Raumklima vom Wandthermostat: Temperatur (färbt den Raum), Luftfeuchte, Ziel, heizt/ruht
-# vars: room (Raum-ID aus core/house.h), entity_id (climate.*)
+# Raumklima vom Wandthermostat: Temperatur (färbt den Raum), Luftfeuchte, Ziel, heizt/ruht,
+# Betriebsart (Zeitplan / Manuell / Aus) und Boost. In der Raumansicht bedienbar.
+# vars: room (Raum-ID aus core/house.h), entity_id (climate.*, Modi auto / heat / off, Preset boost)
 
 sensor:
   - platform: homeassistant
@@ -32,3 +33,16 @@ text_sensor:
     internal: true
     on_value:
       - lambda: house::room_target("${room}", NAN, x);
+  - platform: homeassistant
+    id: ${room}_mode
+    entity_id: ${entity_id}
+    internal: true
+    on_value:
+      - lambda: house::thermostat("${room}", "${entity_id}", x);
+  - platform: homeassistant
+    id: ${room}_preset
+    entity_id: ${entity_id}
+    attribute: preset_mode
+    internal: true
+    on_value:
+      - lambda: house::thermostat_preset("${room}", x);

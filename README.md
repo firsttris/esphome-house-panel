@@ -36,7 +36,9 @@ Built with ESPHome and LVGL for the Guition JC1060P470C (1024 × 600).
 
 All screenshots are rendered from the firmware in CI on every change, with sample values.
 
-<img src="docs/haus.png" width="49%" alt="Overview: the house cross-section and the energy summary"> <img src="docs/raum.png" width="49%" alt="A room opened: lights, shutters, floor heating circuits, thermostat">
+<img src="docs/haus.png" width="49%" alt="Overview: the house cross-section and the energy summary"> <img src="docs/raum.png" width="49%" alt="A room opened: heating card, lights, shutters, floor heating circuits">
+
+<img src="docs/schlafzimmer.png" width="32%" alt="Bedroom: compact heating and air conditioner cards with minus and plus"> <img src="docs/klima.png" width="32%" alt="Air conditioner: dial, modes and fan speed"> <img src="docs/heizung.png" width="32%" alt="Heating: dial, schedule / manual / off and boost">
 
 ## ✨ Features
 
@@ -51,7 +53,8 @@ All screenshots are rendered from the firmware in CI on every change, with sampl
 
 **The side panel (right)**
 - **Overview:** solar (Deye + Hoymiles), house, battery and grid; lights on, open windows, shutters, heating circuits, wallbox, heating rod; "all off" and the front door lock
-- **Room:** light tiles (ceiling lamps swing when switched), shutters with ▲ ■ ▼, window contacts, one bar per heating circuit, thermostat target and state
+- **Room:** heating and air conditioner cards with − / + right at the top, light tiles (ceiling lamps swing when switched), shutters with ▲ ■ ▼, window contacts, one bar per heating circuit
+- **Heating and air conditioner:** tap the card for a dial like in the [room panel](https://github.com/firsttris/esphome-room-panel): schedule / manual / off and boost for the thermostat; off / heat / cool / auto / dry / fan and fan speed for the air conditioner. Changes are sent shortly after the last touch (air conditioner after 2 s, which matters for Daikin Onecta and its 200 calls a day). A running air conditioner shows its mode icon next to the room's temperature in the house.
 
 Also: clock and weather in the header, dimming after 1 min, a sleep screen with a large clock after 3 min, a loading screen until Home Assistant is connected.
 
@@ -100,11 +103,13 @@ packages:
   wohnen_climate: !include { file: bindings/room.yml, vars: { room: wohnen, entity_id: climate.living_room } }
   wohnen_light_0: !include { file: bindings/light.yml, vars: { room: wohnen, idx: 0, entity_id: switch.living_room, text: Licht } }
   wohnen_cover_0: !include { file: bindings/cover.yml, vars: { room: wohnen, idx: 0, entity_id: cover.living_room, text: Rollladen } }
+  wohnen_ac: !include { file: bindings/ac.yml, vars: { room: wohnen, entity_id: climate.living_room_ac } }
 ```
 
 | Building block | What it shows | vars |
 |---|---|---|
-| [`bindings/room.yml`](bindings/room.yml) | room colour, temperature, humidity, thermostat target and state | `room`, `entity_id` (climate) |
+| [`bindings/room.yml`](bindings/room.yml) | room colour, temperature, humidity; heating card and dial (target, schedule / manual / off, boost) | `room`, `entity_id` (climate) |
+| [`bindings/ac.yml`](bindings/ac.yml) | air conditioner card and dial (target, mode, fan), mode icon in the house | `room`, `entity_id` (climate) |
 | [`bindings/light.yml`](bindings/light.yml) | windows glow, light tile | `room`, `idx`, `entity_id`, `text`, optional `swing: false` |
 | [`bindings/cover.yml`](bindings/cover.yml) | shutter of the window with the same index | `room`, `idx`, `entity_id`, `text` |
 | [`bindings/contact.yml`](bindings/contact.yml) | open window | `room`, `idx`, `entity_id`, `text` |

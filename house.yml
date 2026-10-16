@@ -34,6 +34,7 @@ packages:
 
   # --- Dachgeschoss: Mila ---
   mila_climate: !include { file: bindings/room.yml, vars: { room: mila, entity_id: climate.wandthermostat_dg } }
+  mila_ac: !include { file: bindings/ac.yml, vars: { room: mila, entity_id: climate.klima_mila } }
   mila_light_0: !include { file: bindings/light.yml, vars: { room: mila, idx: 0, entity_id: switch.lichtschaltaktor_dg_licht_dg_links, text: Links } }
   mila_light_1: !include { file: bindings/light.yml, vars: { room: mila, idx: 1, entity_id: switch.lichtschaltaktor_dg_licht_dg_mitte, text: Mitte } }
   mila_light_2: !include { file: bindings/light.yml, vars: { room: mila, idx: 2, entity_id: switch.lichtschaltaktor_dg_licht_dg_rechts, text: Rechts } }
@@ -54,6 +55,7 @@ packages:
 
   # --- OG: Schlafzimmer ---
   schlaf_climate: !include { file: bindings/room.yml, vars: { room: schlaf, entity_id: climate.wandthermostat_og_eltern } }
+  schlaf_ac: !include { file: bindings/ac.yml, vars: { room: schlaf, entity_id: climate.klima_schlafzimmer } }
   schlaf_light_0: !include { file: bindings/light.yml, vars: { room: schlaf, idx: 0, entity_id: switch.lichtschaltaktor_og_licht_og_eltern, text: Schlafen } }
   schlaf_light_1: !include { file: bindings/light.yml, vars: { room: schlaf, idx: 1, entity_id: switch.lichtschaltaktor_og_licht_og_vici, text: Vici } }
   schlaf_cover_0: !include { file: bindings/cover.yml, vars: { room: schlaf, idx: 0, entity_id: cover.rolladenaktor_og_1_rolladen_og_eltern_bett, text: "Am Bett" } }

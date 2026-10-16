@@ -56,6 +56,13 @@ font:
     bpp: 4
     glyphs: *latin
 
+  # Zieltemperatur im Drehregler (Heizung, Klima)
+  - file: { type: gfonts, family: Outfit, weight: 500 }
+    id: font_44
+    size: 44
+    bpp: 4
+    glyphs: "0123456789,-"
+
   # Uhr im Ruhemodus
   - file: { type: gfonts, family: Outfit, weight: 300 }
     id: font_110
@@ -68,7 +75,15 @@ font:
     id: icons_11
     size: 11
     bpp: 4
-    glyphs: ["\U000F0438"]  # radiator
+    glyphs: [
+      "\U000F0438",  # radiator
+      # Klimaanlage im Haus: Symbol des Modus
+      "\U000F0238",  # fire
+      "\U000F0717",  # snowflake
+      "\U000F1A79",  # sun-snowflake-variant
+      "\U000F058C",  # water
+      "\U000F0210",  # fan
+    ]
 
   - file: "fonts/materialdesignicons-webfont.ttf"
     id: icons_16
@@ -113,6 +128,17 @@ font:
       "\U000F0598",  # weather-snowy
       "\U000F0591",  # weather-fog
       "\U000F0593",  # weather-lightning
+      # Heizung und Klima
+      "\U000F0374",  # minus
+      "\U000F0415",  # plus
+      "\U000F00F0",  # calendar-clock
+      "\U000F0E47",  # hand-back-right
+      "\U000F0425",  # power
+      "\U000F0238",  # fire
+      "\U000F0717",  # snowflake
+      "\U000F1A79",  # sun-snowflake-variant
+      "\U000F058C",  # water
+      "\U000F0210",  # fan
     ]
 
   - file: "fonts/materialdesignicons-webfont.ttf"
@@ -124,4 +150,8 @@ font:
       "\U000F0335",  # lightbulb
       "\U000F0238",  # fire
       "\U000F02DC",  # home
+      "\U000F0438",  # radiator
+      "\U000F001B",  # air-conditioner
+      "\U000F0210",  # fan
+      "\U000F14DE",  # rocket-launch
     ]

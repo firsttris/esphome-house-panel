@@ -37,6 +37,21 @@ sleep 1.2
 shot raum
 tap 692 92    # Zurück zur Übersicht
 sleep 0.8
+tap 405 210   # Schlafzimmer: Karten Heizung und Klima
+sleep 1.2
+shot schlafzimmer
+tap 740 243   # Karte Klima: Drehregler
+sleep 1.2
+shot klima
+tap 692 92    # zurück zum Raum
+sleep 0.8
+tap 740 167   # Karte Heizung: Drehregler
+sleep 1.2
+shot heizung
+tap 692 92    # zurück zum Raum
+sleep 0.8
+tap 692 92    # zurück zur Übersicht
+sleep 0.8
 
 # Leistung: 15 s Ruhe in der Übersicht. Die App schreibt jede Sekunde
 # "fps · ms pro Bild (davon Kopieren) · Anteil des Bildschirms, der neu gezeichnet wird".
