@@ -1,0 +1,38 @@
+// Renovate (GitHub App, https://github.com/apps/renovate): a pull request for each new ESPHome
+// release, plus the "Dependency Dashboard" issue listing what is open.
+// ESPHome is what the house panel (house.yml on the Guition JC1060P470C, ESP32-P4) builds on: it
+// brings the ESP-IDF framework, the toolchain and every component the YAML uses, so it is pinned
+// to one exact release: the pin in requirements.txt (CI's pip install) and the image in
+// docker-compose.yml. They move together in one PR, whose build check validates and compiles the
+// config with the new release. No external components, git packages or other pins exist here; the
+// actions are not tracked. Check with
+// `npx --package renovate renovate-config-validator .github/renovate.json5`.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+  enabledManagers: ["pip_requirements", "docker-compose"],
+  timezone: "Europe/Berlin",
+  labels: ["dependencies"],
+  // Nothing merges itself: a new release is flashed onto one device by hand first
+  automerge: false,
+  packageRules: [
+    {
+      // The pip package and the image, in one PR so requirements.txt and docker-compose.yml cannot
+      // drift apart. Only releases like 2026.10.1: betas (2026.11.0b1) and the image's nightly
+      // tags (2026.11.0-dev20261030) are left out.
+      matchPackageNames: ["esphome", "ghcr.io/esphome/esphome"],
+      groupName: "ESPHome",
+      sourceUrl: "https://github.com/esphome/esphome",
+      commitMessageTopic: "ESPHome",
+      prBodyNotes: [
+        "Before merging: read the [ESPHome changelog](https://esphome.io/changelog/) of every release between the old and the new pin, its **Breaking changes** first (a monthly release `YYYY.M.0` brings them, a patch release `YYYY.M.x` fixes bugs). Look for `lvgl`, `mipi_dsi`, `gt911`, `esp_ldo`, `esp32_hosted`, `esp32` (ESP-IDF version; the P4 still needs `enable_idf_experimental_features` and moves fast), `font` and `api`/`homeassistant`. The build check of this PR validates and compiles `house.yml` with `base/hardware.yml` only: when the release touches `mipi_dsi` or `esp32_hosted`, also run `esphome config` with `base/hardware-v2.yml` included in `base/device.yml`. Before merging, flash this branch onto the panel over Wi-Fi, watch `esphome logs` and check the display, touch, Wi-Fi through the ESP32-C6 co-processor (if the new release needs newer ESP-Hosted firmware, the *ESP-Hosted Firmware* update entity in Home Assistant offers it) and the energy flow. Then merge. After merging, the Screenshots workflow on main renders the SDL preview with the new release: look at the new pictures in `docs/`. The minimum version in the README badge and table stays unless the config starts to use something newer. If the build fails on a Python requirement of the new release, raise `python-version` in the workflows.",
+      ],
+    },
+    {
+      // pip (pep440) already leaves out the betas; the image also has nightly tags, so only
+      // YYYY.M.x counts there
+      matchPackageNames: ["ghcr.io/esphome/esphome"],
+      versioning: "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
+    },
+  ],
+}
